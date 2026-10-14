@@ -1,0 +1,13 @@
+# Plaintext financial data: NEVER commit
+data/private/
+*.seed.json
+*.plain.json
+.env*.local
+BUILD_PROMPT.md
+
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+*.tsbuildinfo
