@@ -118,7 +118,15 @@ export function Career() {
                 <tbody>
                   {[...oneOffs.provided, ...oneOffs.missing].map((x) => (
                     <tr key={x.label}>
-                      <td style={{ whiteSpace: 'normal' }}>{x.label}{x.note && <div className="muted small">{x.note}</div>}</td>
+                      <td style={{ whiteSpace: 'normal' }}>
+                        {x.label}
+                        {x.hourlyRateEUR != null && x.hours != null && (
+                          <div className="muted small">
+                            {x.hours} h × {eur(x.hourlyRateEUR, 2)}/h ({eur(x.hourlyBasis!.monthlyEUR, 2)} ÷ {x.hourlyBasis!.divisor}) <Prov src="estimate" note={x.hourlyBasis!.src} />
+                          </div>
+                        )}
+                        {x.note && <div className="muted small">{x.note}</div>}
+                      </td>
                       <td>{fmtDate(x.date)}</td>
                       <td className="r">{x.grossEUR != null ? eur(x.grossEUR) : <span className="notprov">not yet provided</span>}</td>
                       <td className="r muted">{x.taxPct}% <Prov src={x.taxSrc ?? 'estimate'} /></td>

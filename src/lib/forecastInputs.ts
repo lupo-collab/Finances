@@ -31,7 +31,11 @@ export interface ForecastOptions {
 
 /** One-off inflows split into provided (with net after tax) and not yet provided. */
 export function oneOffInflows(d: Finance) {
-  const all = d.forecastAssumptions.oneOffInflows ?? [];
+  const all = (d.forecastAssumptions.oneOffInflows ?? []).map((x) => {
+    if (x.grossEUR != null || x.hours == null || !x.hourlyBasis) return { ...x, hourlyRateEUR: null as number | null };
+    const rate = x.hourlyBasis.monthlyEUR / x.hourlyBasis.divisor;
+    return { ...x, grossEUR: x.hours * rate, hourlyRateEUR: rate, src: 'computed' };
+  });
   const provided = all
     .filter((x) => x.grossEUR != null)
     .map((x) => ({ ...x, grossEUR: x.grossEUR as number, netEUR: (x.grossEUR as number) * (1 - x.taxPct / 100) }));

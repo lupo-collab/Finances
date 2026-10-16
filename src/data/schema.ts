@@ -296,6 +296,9 @@ export const financeSchema = z.looseObject({
           src: str,
           taxSrc: str.optional(),
           note: str.optional(),
+          /** Alternative to grossEUR: hours × (monthlyEUR / divisor), computed in code. */
+          hours: num.optional(),
+          hourlyBasis: z.looseObject({ monthlyEUR: num, divisor: num, src: str }).optional(),
         }),
       )
       .optional(),

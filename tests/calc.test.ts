@@ -228,3 +228,18 @@ describe('one-off inflows', () => {
     expect(off.input.extraInflows?.[1]).toBe(0);
   });
 });
+
+describe('one-off inflows from hours', () => {
+  it('computes gross = hours × monthly / divisor', async () => {
+    const { oneOffInflows } = await import('../src/lib/forecastInputs');
+    const f = syntheticFinance();
+    f.forecastAssumptions.oneOffInflows = [
+      { date: '2030-11-30', label: 'Leave payout', grossEUR: null, taxPct: 50, src: 'stated', hours: 100, hourlyBasis: { monthlyEUR: 1680, divisor: 168, src: 'rule' } },
+    ];
+    const o = oneOffInflows(f);
+    expect(o.provided[0].grossEUR).toBeCloseTo(1000);
+    expect(o.provided[0].netEUR).toBeCloseTo(500);
+    expect(o.provided[0].hourlyRateEUR).toBeCloseTo(10);
+    expect(o.missing).toHaveLength(0);
+  });
+});
