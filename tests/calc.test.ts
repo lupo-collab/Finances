@@ -207,3 +207,24 @@ describe('provenance', () => {
     expect(srcTag('sheet, not re-verified')).toBe('sheet');
   });
 });
+
+describe('one-off inflows', () => {
+  it('nets provided items at their tax rate, lists missing ones, and adds them to the forecast year', async () => {
+    const { oneOffInflows, buildForecastInput, defaultForecastOptions } = await import('../src/lib/forecastInputs');
+    const { buildModel } = await import('../src/lib/model');
+    const f = syntheticFinance();
+    f.forecastAssumptions.oneOffInflows = [
+      { date: '2030-11-30', label: 'Bonus', grossEUR: 10000, taxPct: 40, src: 'stated' },
+      { date: '2030-11-30', label: 'Unknown', grossEUR: null, taxPct: 40, src: 'stated' },
+    ];
+    const o = oneOffInflows(f);
+    expect(o.provided[0].netEUR).toBeCloseTo(6000);
+    expect(o.missing.map((x) => x.label)).toEqual(['Unknown']);
+    const m = buildModel(f);
+    const on = buildForecastInput(f, m, defaultForecastOptions(f));
+    expect(on.input.extraInflows?.[1]).toBeCloseTo(6000);
+    expect(on.oneOffNetTotal).toBeCloseTo(6000);
+    const off = buildForecastInput(f, m, { ...defaultForecastOptions(f), includeOneOffs: false });
+    expect(off.input.extraInflows?.[1]).toBe(0);
+  });
+});

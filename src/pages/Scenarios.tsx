@@ -28,6 +28,7 @@ export function Scenarios() {
   const [rsuVal, setRsuVal] = useState<RsuValuation>('haircut50');
   const [stakeOn, setStakeOn] = useState(false);
   const [ing, setIng] = useState(false);
+  const [oneOffsOn, setOneOffsOn] = useState(true);
   const [real, setReal] = useState<'nominal' | 'real'>('nominal');
 
   const otherPct = Math.max(0, 100 - eqPct - bdPct);
@@ -41,6 +42,7 @@ export function Scenarios() {
       rsuValuation: rsuVal,
       includeStake: stakeOn,
       ingSwitch: ing,
+      includeOneOffs: oneOffsOn,
       target: { ...m.target, equityPct: eqPct, bondsPct: bdPct, otherPct },
       returns: { equity: { mean: eqMean, vol: eqVol }, bonds: { mean: bdMean, vol: R.bonds.vol } },
       inflationPct: infl,
@@ -97,6 +99,7 @@ export function Scenarios() {
             <Slider label="Bond allocation" value={bdPct} min={0} max={100 - eqPct} step={5} onChange={setBdPct} fmt={(v) => `${v}% (other ${otherPct}%)`} />
           </div>
           <div className="row">
+            {(d.forecastAssumptions.oneOffInflows?.length ?? 0) > 0 && <Toggle label="Include one-off inflows" checked={oneOffsOn} onChange={setOneOffsOn} />}
             <Toggle label="Include RSUs" checked={rsu} onChange={setRsu} />
             {rsu && <Seg label="RSU valuation" value={rsuVal} onChange={setRsuVal} options={[{ v: 'zero', label: 'Zero' }, { v: 'haircut50', label: '50%' }, { v: 'grant', label: 'Grant' }]} />}
             {stake && <Toggle label={`${stake.label.split(' (')[0]} (0 / ${eurCompact(stake.contingentUpsideEUR ?? 0)})`} checked={stakeOn} onChange={setStakeOn} />}
@@ -126,6 +129,12 @@ export function Scenarios() {
               </div>
               <Assumptions>
                 {res.input.paths.toLocaleString()} paths, seed {res.input.seed}, annual steps. Savings <b>{eurCompact(res.input.savingsPerYear)}/yr</b> <Prov src={sv.src} note={sv.note} />, pension contributions <b>{eurCompact(res.input.pensionContribPerYear)}/yr</b> <Prov src={fa.pensionContributionsEURperYear.src} />. Returns (mean ± vol): equity {res.input.returns.equity.mean}±{res.input.returns.equity.vol}%, bonds {res.input.returns.bonds.mean}±{res.input.returns.bonds.vol}%, other {R.other.mean}±{R.other.vol}%, cash {R.cash.mean}%, pension {R.pension.mean}±{R.pension.vol}%, home {R.home.mean}±{R.home.vol}% <Prov src="judgment" note={R.equity.src} />. Equity–bond correlation {fa.equityBondCorrelation}. Rebalanced yearly to {eqPct}/{bdPct}/{otherPct} + {eurCompact(m.target.bufferEUR)} buffer. Fee drag {pct(res.feeDragPct, 2)}/yr. Mortgage amortises on schedule. Home starts at {basis === 'market' ? 'stated value' : 'sheet equity + mortgage'}.
+                {oneOffsOn && res.oneOffs.provided.length > 0 && (
+                  <>
+                    {' '}One-offs: {res.oneOffs.provided.map((x) => `${x.label} ${eurCompact(x.grossEUR)} gross → ${eurCompact(x.netEUR)} net at ${x.taxPct}% tax`).join('; ')} <Prov src="estimate" note="Net = gross × (1 − marginal tax rate)" />.
+                    {res.oneOffs.missing.length > 0 && <> Not yet provided: {res.oneOffs.missing.map((x) => x.label).join(', ')}.</>}
+                  </>
+                )}
                 {rsu && <> RSUs: {eurCompact(res.rsuInflowTotal)} net added over the horizon ({rsuVal}, after {res.o.rsuWithholdPct}% withholding, estimate from previous employer's sell-to-cover).</>}
                 {stakeOn && stake && <> {stake.label}: +{eurCompact(stake.contingentUpsideEUR ?? 0)} gross in year 1.</>}
                 {ing && <> {m.fundsAcctName} switch: −{eurCompact(m.ingSwitch.tax)} tax today, ETF-level costs after.</>}

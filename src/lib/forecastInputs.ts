@@ -21,11 +21,21 @@ export interface ForecastOptions {
   /** share of each vest withheld for tax (sell-to-cover). Estimate: previous employer's stock history. */
   rsuWithholdPct: number;
   includeStake: boolean;
+  includeOneOffs: boolean;
   ingSwitch: boolean;
   target?: TargetSpec;
   returns?: Partial<ForecastInput['returns']>;
   inflationPct?: number;
   seed?: number;
+}
+
+/** One-off inflows split into provided (with net after tax) and not yet provided. */
+export function oneOffInflows(d: Finance) {
+  const all = d.forecastAssumptions.oneOffInflows ?? [];
+  const provided = all
+    .filter((x) => x.grossEUR != null)
+    .map((x) => ({ ...x, grossEUR: x.grossEUR as number, netEUR: (x.grossEUR as number) * (1 - x.taxPct / 100) }));
+  return { provided, missing: all.filter((x) => x.grossEUR == null) };
 }
 
 /** The off-portfolio item valued at zero with a contingent upside (e.g. a startup stake). */
@@ -43,6 +53,7 @@ export function defaultForecastOptions(d: Finance, basis: Basis = 'sheet'): Fore
     rsuValuation: 'haircut50',
     rsuWithholdPct: gsu?.sellToCoverPct ?? 47,
     includeStake: false,
+    includeOneOffs: true,
     ingSwitch: false,
   };
 }
@@ -61,16 +72,30 @@ export function buildForecastInput(d: Finance, m: Model, o: ForecastOptions) {
   const asOf = parseISODate(d.meta.asOf);
   const fx = d.settings.fxUsdPerEur.value;
   const inflows = new Array<number>(o.years + 1).fill(0);
+  let rsuInflowTotal = 0;
+  const yearIndex = (iso: string) => Math.max(1, Math.ceil((parseISODate(iso).getTime() - asOf.getTime()) / (365.25 * 86_400_000)));
   if (o.includeRsu) {
     const mult = RSU_MULT[o.rsuValuation] * (1 - o.rsuWithholdPct / 100);
     for (const e of m.inc.next.rsu.schedule) {
-      const yrs = (parseISODate(e.date).getTime() - asOf.getTime()) / (365.25 * 86_400_000);
-      const idx = Math.ceil(yrs);
-      if (idx >= 1 && idx <= o.years) inflows[idx] += (e.usdAtGrant * mult) / fx;
+      const idx = yearIndex(e.date);
+      if (idx <= o.years) {
+        inflows[idx] += (e.usdAtGrant * mult) / fx;
+        rsuInflowTotal += (e.usdAtGrant * mult) / fx;
+      }
     }
   }
   const stake = contingentStake(d);
   if (o.includeStake && stake?.contingentUpsideEUR && o.years >= 1) inflows[1] += stake.contingentUpsideEUR;
+  const oneOffs = oneOffInflows(d);
+  let oneOffNetTotal = 0;
+  if (o.includeOneOffs)
+    for (const x of oneOffs.provided) {
+      const idx = yearIndex(x.date);
+      if (idx <= o.years) {
+        inflows[idx] += x.netEUR;
+        oneOffNetTotal += x.netEUR;
+      }
+    }
 
   // Fee drag on invested liquid assets: ETF TER + managed funds (mid of range), or ETF-equivalent after a switch
   const invested = m.liquid.classes.total - m.liquid.classes.cash;
@@ -103,5 +128,5 @@ export function buildForecastInput(d: Finance, m: Model, o: ForecastOptions) {
     feeDragPct,
     inflationPct: o.inflationPct ?? fa.inflationPct,
   };
-  return { input, savingsMissing: savings == null, feeDragPct, rsuInflowTotal: inflows.reduce((a, b) => a + b, 0) };
+  return { input, savingsMissing: savings == null, feeDragPct, rsuInflowTotal, oneOffNetTotal, oneOffs };
 }

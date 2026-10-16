@@ -7,6 +7,7 @@ import { eur, eurCompact, usd, fmtDate } from '../lib/format';
 import { cumulative, type RsuValuation } from '../lib/calc/rsu';
 import { daysBetween, parseISODate } from '../lib/calc/util';
 import { pickNum } from '../data/schema';
+import { oneOffInflows } from '../lib/forecastInputs';
 
 export function Career() {
   const { d, m, today } = useApp();
@@ -60,6 +61,7 @@ export function Career() {
     ],
   };
   const tfrAnnual = pickNum(G.tfr, /annualised/i);
+  const oneOffs = oneOffInflows(d);
   const ms = [...d.milestones].sort((a, b) => a.date.localeCompare(b.date));
 
   return (
@@ -108,6 +110,27 @@ export function Career() {
             })}
           </ul>
         </Card>
+        {oneOffs.provided.length + oneOffs.missing.length > 0 && (
+          <Card className="span-12" title={`Closing pay: ≈ ${eurCompact(oneOffs.provided.reduce((a, x) => a + x.netEUR, 0))} net so far`} sub="One-off inflows counted in the forecast (net of tax at the stated rate)">
+            <div className="tablewrap">
+              <table>
+                <thead><tr><th>Item</th><th>When</th><th className="r">Gross</th><th className="r">Tax</th><th className="r">Net</th><th>Src</th></tr></thead>
+                <tbody>
+                  {[...oneOffs.provided, ...oneOffs.missing].map((x) => (
+                    <tr key={x.label}>
+                      <td style={{ whiteSpace: 'normal' }}>{x.label}{x.note && <div className="muted small">{x.note}</div>}</td>
+                      <td>{fmtDate(x.date)}</td>
+                      <td className="r">{x.grossEUR != null ? eur(x.grossEUR) : <span className="notprov">not yet provided</span>}</td>
+                      <td className="r muted">{x.taxPct}% <Prov src={x.taxSrc ?? 'estimate'} /></td>
+                      <td className="r">{'netEUR' in x ? eur(x.netEUR as number) : '—'}</td>
+                      <td><Prov src={x.src} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
         <Card className="span-6" title={`${A.role}`} sub={`${A.level} · start ${fmtDate(A.startDate)} · ${A.probationMonths}-month probation`}>
           <div className="stat"><span>Base</span><span>{eur(A.baseAnnual)} ({A.instalments} instalments) <Prov src={A.src} /></span></div>
           <div className="stat"><span>Commission at target</span><span>{eur(A.commissionTargetAnnual)} <Prov src={A.src} /></span></div>

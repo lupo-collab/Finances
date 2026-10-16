@@ -285,6 +285,20 @@ export const financeSchema = z.looseObject({
       note: str.optional(),
     }),
     pensionContributionsEURperYear: z.looseObject({ value: num, src: str }),
+    /** One-off cash inflows (e.g. closing pay). grossEUR null = not yet provided. */
+    oneOffInflows: z
+      .array(
+        z.looseObject({
+          date: str,
+          label: str,
+          grossEUR: numN,
+          taxPct: num,
+          src: str,
+          taxSrc: str.optional(),
+          note: str.optional(),
+        }),
+      )
+      .optional(),
     rebalancing: str.optional(),
   }),
   sources: z.array(z.looseObject({ id: str, title: str, url: strN })),
