@@ -21,3 +21,13 @@ describe('reconciliation checks on the synthetic fixture', () => {
     expect(cs.find((c) => c.id === 'nw-2030-06-30')?.status).toBe('fail');
   });
 });
+
+describe('account statement check', () => {
+  it('passes when units × price matches and fails when it does not', () => {
+    const f = syntheticFinance();
+    f.accountStatements = [{ account: 'a', date: '2030-07-01', valueEUR: 1000, units: 40, unitPrice: 25, src: 'statement' }];
+    expect(runChecks(parseFinance(f)).find((c) => c.id.startsWith('stmt-units-'))?.status).toBe('pass');
+    f.accountStatements[0].valueEUR = 1010;
+    expect(runChecks(parseFinance(f)).find((c) => c.id.startsWith('stmt-units-'))?.status).toBe('fail');
+  });
+});

@@ -116,6 +116,12 @@ export function runChecks(d: Finance, tolEUR = 1): Check[] {
     out.push({ id: 'rsu-usd', label: 'RSU first vest then quarterly', expected: `${A.rsu.firstUSD} then ${s.length - 1} × ${A.rsu.laterUSD}`, actual: s.map((e) => e.usdAtGrant).join(', '), status: ok ? 'pass' : 'fail' });
   }
 
+  // Account statements: units × unit price should equal the stated value
+  for (const st of d.accountStatements ?? []) {
+    if (st.units != null && st.unitPrice != null)
+      near(`stmt-units-${st.account}-${st.date}`, `${d.accounts.find((a) => a.id === st.account)?.name ?? st.account} statement ${st.date}: units × price`, st.units * st.unitPrice, st.valueEUR);
+  }
+
   // Forecast inputs present?
   const sv = d.forecastAssumptions.annualNetSavingsEUR;
   out.push({

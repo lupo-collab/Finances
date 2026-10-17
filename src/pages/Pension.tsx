@@ -2,7 +2,7 @@ import { useApp } from '../state';
 import { Card, PageTitle, Prov, Money, Assumptions } from '../components/ui';
 import { EChart } from '../charts/EChart';
 import { usePalette } from '../theme';
-import { eur, eurCompact } from '../lib/format';
+import { eur, eurCompact, fmtDate } from '../lib/format';
 import { pickNum } from '../data/schema';
 
 export function Pension() {
@@ -49,9 +49,40 @@ export function Pension() {
         </Card>
         {funds.map((f) => {
           const line = lines.find(([, v]) => v.account === f.id);
+          const sheetVal = line ? (m.latest.values[line[0]] ?? 0) : null;
+          const st = [...(d.accountStatements ?? [])].filter((x) => x.account === f.id).sort((a, b) => a.date.localeCompare(b.date)).pop();
           return (
             <Card key={f.id} className="span-6" title={f.name} sub={f.institution}>
-              <div className="big">{line ? <Money v={m.latest.values[line[0]] ?? 0} src="sheet" /> : '—'}</div>
+              <div className="big">{sheetVal != null ? <Money v={sheetVal} src="sheet" /> : '—'}</div>
+              <div className="muted small">Sheet value, {fmtDate(m.latest.date)}</div>
+              {st && (
+                <>
+                  <div className="stat" style={{ marginTop: 8 }}>
+                    <span>Statement {fmtDate(st.date)}</span>
+                    <Money v={st.valueEUR} digits={2} src={st.src} />
+                  </div>
+                  {st.units != null && st.unitPrice != null && (
+                    <div className="stat small">
+                      <span>{st.line ?? 'Units'}</span>
+                      <span className="num">
+                        {st.units.toLocaleString(d.meta.locale, { maximumFractionDigits: 3 })} × {eur(st.unitPrice, 3)}
+                      </span>
+                    </div>
+                  )}
+                  {sheetVal != null && (
+                    <div className="stat small">
+                      <span>Statement − sheet</span>
+                      <span className={`num ${st.valueEUR - sheetVal < 0 ? 'down' : 'up'}`}>{eur(st.valueEUR - sheetVal, 2)}</span>
+                    </div>
+                  )}
+                  {st.contributions?.map((c) => (
+                    <div className="stat small" key={c.label}>
+                      <span>{c.label} (to {fmtDate(c.asOf)})</span>
+                      <span className="num">{eur(c.valueEUR, 2)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
               <p className="small muted">{f.notes}</p>
             </Card>
           );

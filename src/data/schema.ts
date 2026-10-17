@@ -261,6 +261,22 @@ export const financeSchema = z.looseObject({
   actions: z.array(action),
   milestones: z.array(z.looseObject({ date: str, label: str })),
   dataQuality: z.array(z.looseObject({ id: str, text: str })),
+  /** Statements for accounts tracked only through sheet snapshots (e.g. pension funds). */
+  accountStatements: z
+    .array(
+      z.looseObject({
+        account: str,
+        date: str,
+        valueEUR: num,
+        units: num.optional(),
+        unitPrice: num.optional(),
+        line: str.optional(),
+        contributions: z.array(z.looseObject({ label: str, asOf: str, valueEUR: num })).optional(),
+        src: str,
+        note: str.optional(),
+      }),
+    )
+    .optional(),
   forecastAssumptions: z.looseObject({
     horizonYears: num,
     paths: num,
