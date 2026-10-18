@@ -65,20 +65,22 @@ export function Pension() {
                     <div className="stat small">
                       <span>{st.line ?? 'Units'}</span>
                       <span className="num">
-                        {st.units.toLocaleString(d.meta.locale, { maximumFractionDigits: 3 })} × {eur(st.unitPrice, 3)}
+                        {st.units.toLocaleString(d.meta.locale, { maximumFractionDigits: 3 })} × {eur(st.unitPrice, 3)} <Prov src={st.src} />
                       </span>
                     </div>
                   )}
                   {sheetVal != null && (
                     <div className="stat small">
                       <span>Statement − sheet</span>
-                      <span className={`num ${st.valueEUR - sheetVal < 0 ? 'down' : 'up'}`}>{eur(st.valueEUR - sheetVal, 2)}</span>
+                      <span className={`num ${st.valueEUR - sheetVal < 0 ? 'down' : 'up'}`}>{eur(st.valueEUR - sheetVal, 2)} <Prov src="computed" /></span>
                     </div>
                   )}
                   {st.contributions?.map((c) => (
                     <div className="stat small" key={c.label}>
                       <span>{c.label} (to {fmtDate(c.asOf)})</span>
-                      <span className="num">{eur(c.valueEUR, 2)}</span>
+                      <span className="num">
+                        {eur(c.valueEUR, 2)} <Prov src={st.src} />
+                      </span>
                     </div>
                   ))}
                 </>
@@ -94,7 +96,14 @@ export function Pension() {
             ))}
             {!openActions.length && <li className="muted">None</li>}
           </ul>
-          <Assumptions>Comparti and fees: <span className="notprov">not yet provided</span>. Forecast pension return: {d.forecastAssumptions.returnsNominalEUR.pension.mean}% <Prov src={d.forecastAssumptions.returnsNominalEUR.pension.src} /></Assumptions>
+          <Assumptions>
+            Fees and any investment option not shown on a statement above: <span className="notprov">not yet provided</span> (see Plan › Actions).
+            <br />
+            In forecasts, pension money grows about <b>{d.forecastAssumptions.returnsNominalEUR.pension.mean}% a year</b> after fees and the 20% tax on pension-fund returns, swings by about{' '}
+            <b>±{d.forecastAssumptions.returnsNominalEUR.pension.vol}%</b> in a typical year
+            {(d.forecastAssumptions.pensionEquityCorrelation ?? 0) > 0 && <> and tends to move with the stock market (correlation {d.forecastAssumptions.pensionEquityCorrelation})</>}{' '}
+            <Prov src={d.forecastAssumptions.returnsNominalEUR.pension.src} />
+          </Assumptions>
         </Card>
       </div>
     </>

@@ -6,6 +6,9 @@
    to update the file. For a new net-worth snapshot:
    `npm run snapshot -- --date YYYY-MM-DD` copies the last snapshot. Then update every line and set
    `expectedTotal` once you have reconciled it. Give every new number a `src`.
+   - A pension or other statement for an account the sheet tracks: add it to `accountStatements`.
+   - One-off money coming in (bonus, payout): add it to `forecastAssumptions.oneOffInflows`.
+   - Open data requests are on the site's Plan page (Actions, type "data"/"check").
 3. **Check it.** Run `npm run verify` and fix anything red. Warnings (⚠) are known sheet differences.
 4. **Encrypt it.** Run `npm run encrypt`. You type the passphrase twice; it is never written to disk.
 5. **Publish it.** Commit **only** `public/data.enc.json`, then push to `main`. GitHub Actions deploys the site.

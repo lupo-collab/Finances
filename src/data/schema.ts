@@ -292,6 +292,8 @@ export const financeSchema = z.looseObject({
     inflationPct: num,
     inflationSrc: str.optional(),
     equityBondCorrelation: num,
+    pensionEquityCorrelation: num.optional(),
+    pensionEquityCorrelationSrc: str.optional(),
     correlationSrc: str.optional(),
     annualNetSavingsEUR: z.looseObject({
       low: numN,

@@ -147,7 +147,9 @@ export function HomePage() {
         <Card className="span-4" title="Don't prepay" sub={<Owner kind="judgment" />} soft>
           <div className="stat">
             <span>Mortgage rate (TAN)</span>
-            <span className="num">{pct(M.tanPct, 2)}</span>
+            <span className="num">
+              {pct(M.tanPct, 2)} <Prov src={M.src} />
+            </span>
           </div>
           <div className="stat">
             <span>Interest next 12 months</span>
@@ -163,13 +165,17 @@ export function HomePage() {
             <span>
               <b>Rate after detraction</b>
             </span>
-            <b className="num">{pct(rateAfter, 2)}</b>
+            <b className="num">
+              {pct(rateAfter, 2)} <Prov src="computed" />
+            </b>
           </div>
           <div className="stat">
             <span>
               <b>Net cash yield</b> ({trCash ? `${pct(trCash.ratePct!, 2)} gross × (1 − 26%)` : '—'})
             </span>
-            <b className="num">{cashNet != null ? pct(cashNet, 2) : '—'}</b>
+            <b className="num">
+              {cashNet != null ? pct(cashNet, 2) : '—'} <Prov src="computed" />
+            </b>
           </div>
           <p className="small">
             {cashNet != null && cashNet > rateAfter

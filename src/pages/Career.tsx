@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../state';
-import { Card, PageTitle, Prov, Seg, Assumptions, Owner } from '../components/ui';
+import { Card, PageTitle, Prov, Seg, Assumptions, Owner, Money } from '../components/ui';
 import { EChart } from '../charts/EChart';
 import { usePalette } from '../theme';
 import { eur, eurCompact, usd, fmtDate } from '../lib/format';
@@ -142,8 +142,10 @@ export function Career() {
         <Card className="span-6" title={`${A.role}`} sub={`${A.level} · start ${fmtDate(A.startDate)} · ${A.probationMonths}-month probation`}>
           <div className="stat"><span>Base</span><span>{eur(A.baseAnnual)} ({A.instalments} instalments) <Prov src={A.src} /></span></div>
           <div className="stat"><span>Commission at target</span><span>{eur(A.commissionTargetAnnual)} <Prov src={A.src} /></span></div>
-          <div className="stat"><span>Sales pass</span><span className="muted small">{A.salesPassExpectation}</span></div>
-          <h3 style={{ fontSize: 13, margin: '12px 0 4px' }} className="muted">Stipends (USD)</h3>
+          <div className="stat"><span>Sales pass</span><span className="muted small">{A.salesPassExpectation} <Prov src="stated" /></span></div>
+          <h3 style={{ fontSize: 13, margin: '12px 0 4px' }} className="muted">
+            Stipends (USD) <Prov src={A.src} />
+          </h3>
           {Object.entries(A.stipendsUSD).map(([k, v]) => (
             <div className="stat small" key={k}><span>{k.replace(/([A-Z])/g, ' $1').toLowerCase()}</span><span>{usd(v)}</span></div>
           ))}
@@ -156,7 +158,7 @@ export function Career() {
             <b>Covenant:</b> {A.covenants}. {G.gsu?.note}
           </Assumptions>
           {tfrAnnual != null && <div className="stat"><span>TFR to pension fund, annualised ({prevName} era)</span><span>{eur(tfrAnnual)} <Prov src="estimate" note={String(G.tfr?.src ?? '')} /></span></div>}
-          <div className="stat"><span>Net worth today</span><span>{eurCompact(m.nw.sheet)}</span></div>
+          <div className="stat"><span>Net worth today</span><Money v={m.nw.sheet} compact src="computed" /></div>
         </Card>
       </div>
     </>

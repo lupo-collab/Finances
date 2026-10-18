@@ -49,7 +49,7 @@ export function Tax() {
           <div className="stat"><span>Winners' unrealised gains</span><Money v={m.ingSwitch.gains} digits={2} src="computed" /></div>
           <div className="stat"><span>Tax at 26% (upper bound)</span><Money v={m.ingSwitch.tax} digits={2} src="computed" /></div>
           <div className="stat"><span>Annual fee saving (fund mid − ETF equivalent)</span><Money v={saving} src="estimate" /></div>
-          <div className="stat"><span><b>Payback</b></span><b>{Number.isFinite(payback) ? `${payback.toFixed(1)} years` : '—'}</b></div>
+          <div className="stat"><span><b>Payback</b></span><b>{Number.isFinite(payback) ? `${payback.toFixed(1)} years` : '—'} <Prov src="estimate" note="Tax upper bound ÷ estimated annual fee saving" /></b></div>
           <Assumptions>{T.ingSwitch.note}</Assumptions>
         </Card>
 

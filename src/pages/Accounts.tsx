@@ -49,7 +49,9 @@ export function Accounts() {
               <div style={{ marginTop: 10 }}>
                 <div className="stat small">
                   <span>Cash deposits vs {eurCompact(maxDep)} limit</span>
-                  <span className="num">{eur(cash)}</span>
+                  <span className="num">
+                    {eur(cash)} <Prov src="computed" note="Sum of this bank's cash lines" />
+                  </span>
                 </div>
                 <div className={`bar${cash >= 0.9 * maxDep ? ' near' : ''}`} role="meter" aria-valuenow={cash} aria-valuemax={maxDep} aria-label={`Cash ${eur(cash)} of ${eur(maxDep)}`}>
                   <span style={{ width: `${Math.min(100, (cash / maxDep) * 100)}%` }} />
@@ -68,7 +70,7 @@ export function Accounts() {
               <div className="stat small">
                 <span>Sheet vs statement</span>
                 <span className="num">
-                  {eur(svs.diff, 2)} <span className="muted">({svs.note})</span>
+                  {eur(svs.diff, 2)} <Prov src="computed" /> <span className="muted">({svs.note})</span>
                 </span>
               </div>
             )}

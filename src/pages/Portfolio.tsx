@@ -201,19 +201,19 @@ export function Portfolio() {
 
   // Currency exposure (estimate): only where fund data is known; managed funds explicit "unknown"
   const vw = d.fundsOverlapNotes.vwce;
-  const cur = { EUR: 0, USD: 0, 'Mixed non-EUR': 0, Crypto: 0, Unknown: 0 };
+  const cur = { EUR: 0, USD: 0, 'Mixed currencies': 0, Crypto: 0, Unknown: 0 };
   for (const p of d.liquidPortfolio.positions) {
     if (p.account === m.fundsAcct) cur.Unknown += p.valueEUR;
     else if (p.ticker === core) {
       cur.USD += (p.valueEUR * vw.usPct) / 100;
-      cur['Mixed non-EUR'] += (p.valueEUR * (100 - vw.usPct)) / 100;
+      cur['Mixed currencies'] += (p.valueEUR * (100 - vw.usPct)) / 100;
     } else if (p.currency === 'USD') cur.USD += p.valueEUR;
     else if (p.subClass === 'crypto') cur.Crypto += p.valueEUR;
-    else if (p.assetClass === 'equity') cur['Mixed non-EUR'] += p.valueEUR; // regional equity ETFs
+    else if (p.assetClass === 'equity') cur['Mixed currencies'] += p.valueEUR; // regional equity ETFs (Europe incl. EUR, EM)
     else cur.EUR += p.valueEUR; // EUR-hedged / euro govt bonds, EUR PE
   }
   for (const c of d.liquidPortfolio.cash) cur.EUR += c.valueEUR;
-  const curColors: Record<string, string> = { EUR: pal.cash, USD: pal.equity, 'Mixed non-EUR': pal.invested, Crypto: pal.other, Unknown: pal.off };
+  const curColors: Record<string, string> = { EUR: pal.cash, USD: pal.equity, 'Mixed currencies': pal.invested, Crypto: pal.other, Unknown: pal.off };
   const curOption = {
     tooltip: { trigger: 'item', formatter: (p: { name: string; value: number; percent: number }) => `${p.name}: <b>${eur(p.value)}</b> (${p.percent.toFixed(1)}%)` },
     series: [
@@ -349,7 +349,9 @@ export function Portfolio() {
           {vwceByAcct.map((p) => (
             <div className="stat" key={p.account} style={{ paddingLeft: 12, fontSize: 13 }}>
               <span>{acctName(p.account)}</span>
-              <span className="num">{eur(p.valueEUR)}</span>
+              <span className="num">
+                {eur(p.valueEUR)} <Prov src={p.src} />
+              </span>
             </div>
           ))}
           <div className="stat">

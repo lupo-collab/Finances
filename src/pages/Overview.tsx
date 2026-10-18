@@ -238,7 +238,7 @@ export function Overview() {
           title={m.gaps.equity > 0 ? `Equity is ${eurCompact(m.gaps.equity)} below plan` : 'Allocation vs plan'}
           sub={
             <>
-              Liquid portfolio vs {d.targets.name}: {m.target.equityPct}/{m.target.bondsPct}/{m.target.otherPct} + {eurCompact(m.target.bufferEUR)} buffer. Black tick = target.
+              Liquid portfolio vs {d.targets.name}: {m.target.equityPct}/{m.target.bondsPct}/{m.target.otherPct} + {eurCompact(m.target.bufferEUR)} buffer. The tick shows the target.
             </>
           }
         >
@@ -276,7 +276,7 @@ export function Overview() {
                 <b>
                   {fc.input.returns.equity.mean}% ± {fc.input.returns.equity.vol}%
                 </b>
-                , bonds <b>{fc.input.returns.bonds.mean}%</b>, cash <b>{fc.input.returns.cash.mean}%</b>, home <b>{fc.input.returns.home.mean}%</b> · inflation{' '}
+                , bonds <b>{fc.input.returns.bonds.mean}%</b>, cash <b>{fc.input.returns.cash.mean}%</b>, pension <b>{fc.input.returns.pension.mean}%</b>, home <b>{fc.input.returns.home.mean}%</b> · inflation{' '}
                 <b>{fc.input.inflationPct}%</b> · rebalanced yearly to target · fees {pct(fc.feeDragPct, 2)} · RSUs <b>excluded</b>{fc.oneOffs.provided.length > 0 && <> · one-offs <b>+{eurCompact(fc.oneOffNetTotal)}</b> net</>}{fc.oneOffs.missing.length > 0 && <> ({fc.oneOffs.missing.length} not yet provided)</>} · {fc.input.paths.toLocaleString()} paths.{' '}
                 <Link to="/scenarios">Change in Scenarios →</Link>
               </Assumptions>

@@ -243,3 +243,28 @@ describe('one-off inflows from hours', () => {
     expect(o.missing).toHaveLength(0);
   });
 });
+
+describe('pension–equity correlation', () => {
+  it('widens the net-worth range when pension moves with equities, and leaves medians close', () => {
+    const base: ForecastInput = {
+      years: 10,
+      paths: 3000,
+      seed: 11,
+      start: { equity: 100000, bonds: 0, other: 0, cash: 10000, pension: 100000, homeValue: 0, receivable: 0 },
+      mortgageByYear: new Array(11).fill(0),
+      returns: { equity: { mean: 6, vol: 16 }, bonds: { mean: 3, vol: 5 }, cash: { mean: 2, vol: 0.5 }, other: { mean: 5, vol: 30 }, pension: { mean: 4, vol: 12 }, home: { mean: 2, vol: 5 } },
+      equityBondCorrelation: 0.2,
+      target: { equityPct: 100, bondsPct: 0, otherPct: 0, bufferEUR: 10000 },
+      savingsPerYear: 0,
+      pensionContribPerYear: 0,
+      inflationPct: 2,
+    };
+    const indep = runForecast({ ...base, pensionEquityCorrelation: 0 });
+    const corr = runForecast({ ...base, pensionEquityCorrelation: 0.9 });
+    const spread = (o: typeof indep) => o.netWorth[10].p90 - o.netWorth[10].p10;
+    expect(spread(corr)).toBeGreaterThan(spread(indep));
+    expect(Math.abs(corr.netWorth[10].p50 - indep.netWorth[10].p50) / indep.netWorth[10].p50).toBeLessThan(0.05);
+    // default (no field) behaves as independent
+    expect(runForecast(base)).toEqual(indep);
+  });
+});

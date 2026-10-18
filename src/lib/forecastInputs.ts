@@ -124,6 +124,7 @@ export function buildForecastInput(d: Finance, m: Model, o: ForecastOptions) {
     mortgageByYear,
     returns,
     equityBondCorrelation: fa.equityBondCorrelation,
+    pensionEquityCorrelation: fa.pensionEquityCorrelation ?? 0,
     target: o.target ?? m.target,
     savingsPerYear: savings ?? 0,
     pensionContribPerYear: fa.pensionContributionsEURperYear.value,

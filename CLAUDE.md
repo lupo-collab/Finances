@@ -25,3 +25,17 @@ This is Luca's private finance dashboard. The plaintext data is in `data/private
 - The canary `meta._canary` must never appear in git or `dist/`. `scripts/guard-*.mjs` and the
   pre-commit hook enforce this; don't weaken them.
 - Before pushing: `npm test`, `npm run build` (includes the dist guard), `node scripts/guard-repo.mjs`.
+
+## Data model notes (private file)
+- `income`: employer entries are keyed by whatever the data uses and recognised by shape
+  (`incomeOf()` in `src/data/schema.ts`): the one with `years` is the previous employer, the one
+  with `rsu` the next. Keep employer names out of code.
+- `forecastAssumptions.oneOffInflows`: dated one-off cash (e.g. closing pay). Give `grossEUR`, or
+  `hours` + `hourlyBasis` {monthlyEUR, divisor}; `taxPct` nets it. `grossEUR: null` shows as
+  "not yet provided". Shares that vest into a brokerage account belong in that account, not here.
+- `accountStatements`: statements for accounts the sheet tracks (e.g. pension funds). Record them
+  and flag the gap in `dataQuality`; don't overwrite a sheet snapshot. Use the statement at the
+  next snapshot.
+- `actions`: `type` recommendation = Claude's judgment, decision = Luca's call, check/data = things
+  Luca needs to look up. Data requests live here so they show on the Plan page.
+- Assumptions marked `judgment` were set by Claude (some delegated by Luca, see `updateLog`).

@@ -22,6 +22,8 @@ export interface ForecastInput {
   mortgageByYear: number[];
   returns: { equity: RA; bonds: RA; cash: RA; other: RA; pension: RA; home: RA };
   equityBondCorrelation: number;
+  /** correlation of pension returns with equity returns (0 = independent) */
+  pensionEquityCorrelation?: number;
   target: { equityPct: number; bondsPct: number; otherPct: number; bufferEUR: number };
   savingsPerYear: number;
   pensionContribPerYear: number;
@@ -50,6 +52,7 @@ export interface ForecastOutput {
 
 /**
  * Annual-step Monte Carlo: lognormal returns per bucket, equity–bond correlation via Cholesky,
+ * pension returns optionally correlated with equity,
  * end-of-year contributions, annual rebalancing of the liquid portfolio to target,
  * deterministic mortgage amortisation. Seeded, so the same inputs give the same output.
  */
@@ -70,6 +73,8 @@ export function runForecast(inp: ForecastInput): ForecastOutput {
     home: lognormalParams(inp.returns.home.mean, inp.returns.home.vol),
   };
   const fee = (inp.feeDragPct ?? 0) / 100;
+  const rhoPE = Math.max(-1, Math.min(1, inp.pensionEquityCorrelation ?? 0));
+  const rhoPEc = Math.sqrt(1 - rhoPE * rhoPE);
   const tsum = inp.target.equityPct + inp.target.bondsPct + inp.target.otherPct || 1;
   const w = { e: inp.target.equityPct / tsum, b: inp.target.bondsPct / tsum, o: inp.target.otherPct / tsum };
 
@@ -95,7 +100,7 @@ export function runForecast(inp: ForecastInput): ForecastOutput {
       b *= Math.exp(prm.bonds.mu + prm.bonds.sigma * zb) * (1 - fee);
       o *= Math.exp(prm.other.mu + prm.other.sigma * rnd()) * (1 - fee);
       c *= Math.exp(prm.cash.mu + prm.cash.sigma * rnd());
-      pen *= Math.exp(prm.pension.mu + prm.pension.sigma * rnd());
+      pen *= Math.exp(prm.pension.mu + prm.pension.sigma * (rhoPE * ze + rhoPEc * rnd()));
       home *= Math.exp(prm.home.mu + prm.home.sigma * rnd());
       // end-of-year contributions
       c += inp.savingsPerYear + (inp.extraInflows?.[y] ?? 0);
