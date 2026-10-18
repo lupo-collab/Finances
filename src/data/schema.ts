@@ -272,6 +272,8 @@ export const financeSchema = z.looseObject({
         unitPrice: num.optional(),
         line: str.optional(),
         contributions: z.array(z.looseObject({ label: str, asOf: str, valueEUR: num })).optional(),
+        /** dated amounts credited to the account (e.g. quarterly pension contributions) */
+        contributionEvents: z.array(z.looseObject({ date: str, valueEUR: num })).optional(),
         src: str,
         note: str.optional(),
       }),

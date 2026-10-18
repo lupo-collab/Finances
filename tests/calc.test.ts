@@ -268,3 +268,24 @@ describe('pension–equity correlation', () => {
     expect(runForecast(base)).toEqual(indep);
   });
 });
+
+describe('util helpers', () => {
+  it('decimalsOf reads the written precision', async () => {
+    const { decimalsOf } = await import('../src/lib/calc/util');
+    expect(decimalsOf(26.58)).toBe(2);
+    expect(decimalsOf(32.343)).toBe(3);
+    expect(decimalsOf(100)).toBe(0);
+    expect(decimalsOf(1e-7)).toBe(7);
+  });
+  it('sumWithinDays sums the trailing window, inclusive of the end date', async () => {
+    const { sumWithinDays } = await import('../src/lib/calc/util');
+    const ev = [
+      { date: '2029-07-31', valueEUR: 1 },
+      { date: '2029-10-31', valueEUR: 10 },
+      { date: '2030-04-30', valueEUR: 100 },
+      { date: '2030-10-18', valueEUR: 1000 },
+      { date: '2030-10-19', valueEUR: 5000 },
+    ];
+    expect(sumWithinDays(ev, '2030-10-18', 365)).toBe(1110);
+  });
+});

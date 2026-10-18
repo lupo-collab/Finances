@@ -21,3 +21,23 @@ export function parseISODate(s: string): Date {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
+
+/** Number of decimals a value was written with (e.g. 26.58 -> 2). */
+export function decimalsOf(x: number): number {
+  const t = String(x);
+  if (t.includes('e-')) return Number(t.split('e-')[1]);
+  return t.includes('.') ? t.split('.')[1].length : 0;
+}
+
+/** Sum of dated amounts in the `days` before (and including) `endISO`. */
+export function sumWithinDays(events: readonly { date: string; valueEUR: number }[], endISO: string, days: number): number {
+  const end = parseISODate(endISO);
+  return events
+    .filter((e) => {
+      const ago = daysBetween(parseISODate(e.date), end);
+      return ago >= 0 && ago < days;
+    })
+    .reduce((a, e) => a + e.valueEUR, 0);
+}
+
+export const isClosedStatus = (s: string) => s === 'done' || s === 'dropped';

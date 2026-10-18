@@ -2,6 +2,7 @@
 // so no real numbers live in committed code. Used by `npm run verify` and the Data page.
 import type { Finance } from '../data/schema';
 import { buildModel } from './model';
+import { decimalsOf } from './calc/util';
 
 export type CheckStatus = 'pass' | 'warn' | 'fail' | 'skip';
 export interface Check {
@@ -119,7 +120,14 @@ export function runChecks(d: Finance, tolEUR = 1): Check[] {
   // Account statements: units × unit price should equal the stated value
   for (const st of d.accountStatements ?? []) {
     if (st.units != null && st.unitPrice != null)
-      near(`stmt-units-${st.account}-${st.date}`, `${d.accounts.find((a) => a.id === st.account)?.name ?? st.account} statement ${st.date}: units × price`, st.units * st.unitPrice, st.valueEUR);
+      // statements often show a rounded unit price: allow half a unit of its last decimal (at least cents) on every unit
+      near(
+        `stmt-units-${st.account}-${st.date}`,
+        `${d.accounts.find((a) => a.id === st.account)?.name ?? st.account} statement ${st.date}: units × price`,
+        st.units * st.unitPrice,
+        st.valueEUR,
+        Math.max(tolEUR, st.units * 0.5 * Math.pow(10, -Math.max(2, decimalsOf(st.unitPrice)))),
+      );
   }
 
   // Forecast inputs present?

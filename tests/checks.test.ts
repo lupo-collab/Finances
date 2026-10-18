@@ -31,3 +31,14 @@ describe('account statement check', () => {
     expect(runChecks(parseFinance(f)).find((c) => c.id.startsWith('stmt-units-'))?.status).toBe('fail');
   });
 });
+
+describe('account statement check with a rounded unit price', () => {
+  it('accepts the gap explained by the displayed price rounding, rejects a bigger one', () => {
+    const f = syntheticFinance();
+    // true price 10.006 shown as 10.01: 1000 units -> 4 EUR gap, within 1000 x 0.005 = 5
+    f.accountStatements = [{ account: 'a', date: '2030-07-01', valueEUR: 10006, units: 1000, unitPrice: 10.01, src: 'statement' }];
+    expect(runChecks(parseFinance(f)).find((c) => c.id.startsWith('stmt-units-'))?.status).toBe('pass');
+    f.accountStatements[0].valueEUR = 10000; // 10 EUR gap > 5
+    expect(runChecks(parseFinance(f)).find((c) => c.id.startsWith('stmt-units-'))?.status).toBe('fail');
+  });
+});

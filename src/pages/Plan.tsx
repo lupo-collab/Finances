@@ -127,7 +127,7 @@ export function Plan() {
                       <td><span className="pill neutral">{a.type}</span></td>
                       <td>{a.type === 'recommendation' ? <Owner kind="judgment" /> : a.type === 'decision' ? <Owner kind="owner" /> : a.owner}</td>
                       <td className={dd != null && dd < 0 ? 'down' : ''}>{a.due ? `${fmtDate(a.due)}${dd != null ? ` (${dd < 0 ? `${-dd} d overdue` : `in ${dd} d`})` : ''}` : '—'}</td>
-                      <td><span className={`pill ${a.status === 'done' ? 'pass' : a.status === 'standing' ? 'neutral' : 'warn'}`}>{a.status}</span></td>
+                      <td><span className={`pill ${a.status === 'done' ? 'pass' : a.status === 'standing' || a.status === 'dropped' ? 'neutral' : 'warn'}`}>{a.status}</span></td>
                     </tr>
                   );
                 })}

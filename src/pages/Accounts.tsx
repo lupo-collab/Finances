@@ -42,7 +42,7 @@ export function Accounts() {
               <span className="big">
                 <Money v={value} src={src} />
               </span>
-              <span className="chip">{a.regime}</span>
+              {a.regime !== '-' && <span className="chip">{a.regime}</span>}
             </div>
             <div className="muted small">{pct((value / nw) * 100)} of net worth</div>
             {cash > 0 && (
@@ -75,7 +75,8 @@ export function Accounts() {
               </div>
             )}
             <p className="small muted" style={{ marginBottom: 0 }}>
-              {a.notes} <span title={`Regime source: ${a.regimeSrc}`}>(regime: {a.regimeSrc})</span>
+              {a.notes}{' '}
+              {a.regime !== '-' && a.regimeSrc !== '-' && <span title={`Regime source: ${a.regimeSrc}`}>(regime: {a.regimeSrc})</span>}
             </p>
           </Card>
         ))}

@@ -5,7 +5,7 @@ import { EChart } from '../charts/EChart';
 import { sparkline, fan } from '../charts/options';
 import { usePalette, BUCKET_LABEL, CLASS_LABEL } from '../theme';
 import { eur, eurCompact, pct, fmtDate, signed } from '../lib/format';
-import { daysBetween, parseISODate } from '../lib/calc/util';
+import { daysBetween, parseISODate, isClosedStatus } from '../lib/calc/util';
 import { runForecast } from '../lib/calc/forecast';
 import { buildForecastInput, defaultForecastOptions } from '../lib/forecastInputs';
 import { BUCKETS, ASSET_CLASSES } from '../data/schema';
@@ -158,7 +158,7 @@ export function Overview() {
   }
   if (m.liquid.singleStockPct >= 0.8 * S.googMaxShareOfLiquidPct)
     cards.push({ tag: 'Concentration', title: `${m.liquid.singleStockName} is ${pct(m.liquid.singleStockPct, 2)} of liquid`, body: `Guardrail: ${pct(S.googMaxShareOfLiquidPct)}.`, to: '/portfolio' });
-  const dueSoon = d.actions.filter((a) => a.due && a.status !== 'done' && daysBetween(today, parseISODate(a.due)) <= 30);
+  const dueSoon = d.actions.filter((a) => a.due && !isClosedStatus(a.status) && daysBetween(today, parseISODate(a.due)) <= 30);
   if (dueSoon.length) {
     const first = dueSoon.map((a) => a.due as string).sort()[0];
     const days = daysBetween(today, parseISODate(first));

@@ -4,6 +4,7 @@ import { EChart } from '../charts/EChart';
 import { usePalette } from '../theme';
 import { eur, eurCompact, fmtDate } from '../lib/format';
 import { pickNum } from '../data/schema';
+import { isClosedStatus, sumWithinDays, decimalsOf } from '../lib/calc/util';
 
 export function Pension() {
   const { d, m } = useApp();
@@ -34,7 +35,7 @@ export function Pension() {
   const pc = d.forecastAssumptions.pensionContributionsEURperYear;
   const tfrYtd = pickNum(m.inc.prev.tfr, /ytd/i);
   const names = funds.map((f) => f.name.toLowerCase());
-  const openActions = d.actions.filter((a) => /pension|comparti/i.test(a.title) || names.some((n) => a.title.toLowerCase().includes(n)));
+  const openActions = d.actions.filter((a) => !isClosedStatus(a.status) && (/pension|comparti/i.test(a.title) || names.some((n) => a.title.toLowerCase().includes(n))));
   return (
     <>
       <PageTitle sub={funds.map((f) => f.name).join(' + ')}>Pension · {eurCompact(total)}</PageTitle>
@@ -65,7 +66,7 @@ export function Pension() {
                     <div className="stat small">
                       <span>{st.line ?? 'Units'}</span>
                       <span className="num">
-                        {st.units.toLocaleString(d.meta.locale, { maximumFractionDigits: 3 })} × {eur(st.unitPrice, 3)} <Prov src={st.src} />
+                        {st.units.toLocaleString(d.meta.locale, { maximumFractionDigits: 3 })} × {eur(st.unitPrice, Math.max(2, decimalsOf(st.unitPrice)))} <Prov src={st.src} />
                       </span>
                     </div>
                   )}
@@ -73,6 +74,14 @@ export function Pension() {
                     <div className="stat small">
                       <span>Statement − sheet</span>
                       <span className={`num ${st.valueEUR - sheetVal < 0 ? 'down' : 'up'}`}>{eur(st.valueEUR - sheetVal, 2)} <Prov src="computed" /></span>
+                    </div>
+                  )}
+                  {st.contributionEvents && st.contributionEvents.length > 0 && (
+                    <div className="stat small">
+                      <span>Credited in the 12 months to {fmtDate(st.date)}</span>
+                      <span className="num">
+                        {eur(sumWithinDays(st.contributionEvents, st.date, 365), 2)} <Prov src="computed" note="Sum of contributions on the statement dated in the last 12 months" />
+                      </span>
                     </div>
                   )}
                   {st.contributions?.map((c) => (
@@ -97,7 +106,7 @@ export function Pension() {
             {!openActions.length && <li className="muted">None</li>}
           </ul>
           <Assumptions>
-            Fees and any investment option not shown on a statement above: <span className="notprov">not yet provided</span> (see Plan › Actions).
+            Fees in each fund's note are public estimates; the exact figures are in each fund's cost sheet ("Scheda costi").
             <br />
             In forecasts, pension money grows about <b>{d.forecastAssumptions.returnsNominalEUR.pension.mean}% a year</b> after fees and the 20% tax on pension-fund returns, swings by about{' '}
             <b>±{d.forecastAssumptions.returnsNominalEUR.pension.vol}%</b> in a typical year
