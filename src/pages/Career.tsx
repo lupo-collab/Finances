@@ -68,7 +68,7 @@ export function Career() {
     <>
       <PageTitle sub={`${G.employer} → ${A.employer}`}>Career & income</PageTitle>
       <div className="grid">
-        <Card className="span-6" title="Taxable income 2021–2026" sub={<>{prevName} payslips / CU <Prov src={G.yearsSrc} /> · * = partial year (hatched)</>}>
+        <Card className="span-6" title={`Taxable income ${G.years[0]?.year ?? ""}–${G.years[G.years.length - 1]?.year ?? ""}`} sub={<>{prevName} payslips / CU <Prov src={G.yearsSrc} /> · * = partial year (hatched)</>}>
           <EChart height={260} option={incOption} ariaLabel={G.years.map((y) => `${y.year}: ${eurCompact(y.taxableIrpef)}`).join(', ')} />
           <Assumptions>{G.years.filter((y) => y.note).map((y) => `${y.year}: ${y.note}`).join(' · ')}</Assumptions>
         </Card>

@@ -272,8 +272,8 @@ describe('pension–equity correlation', () => {
 describe('util helpers', () => {
   it('decimalsOf reads the written precision', async () => {
     const { decimalsOf } = await import('../src/lib/calc/util');
-    expect(decimalsOf(26.58)).toBe(2);
-    expect(decimalsOf(32.343)).toBe(3);
+    expect(decimalsOf(12.34)).toBe(2);
+    expect(decimalsOf(56.789)).toBe(3);
     expect(decimalsOf(100)).toBe(0);
     expect(decimalsOf(1e-7)).toBe(7);
   });

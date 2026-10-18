@@ -22,7 +22,7 @@ export function parseISODate(s: string): Date {
   return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
-/** Number of decimals a value was written with (e.g. 26.58 -> 2). */
+/** Number of decimals a value was written with (e.g. 12.34 -> 2). */
 export function decimalsOf(x: number): number {
   const t = String(x);
   if (t.includes('e-')) return Number(t.split('e-')[1]);
