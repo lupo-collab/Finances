@@ -29,6 +29,16 @@ export interface ForecastOptions {
   seed?: number;
 }
 
+/** Yearly pension contributions: from the pay basis when given (computed), else the stored run-rate. */
+export function pensionContribution(d: Finance, m: Model): { value: number; computed: boolean; pay: number | null; ratePct: number | null } {
+  const pc = d.forecastAssumptions.pensionContributionsEURperYear;
+  const b = pc.basis;
+  if (!b) return { value: pc.value, computed: false, pay: null, ratePct: null };
+  const pay = b.pay === 'nextOte' ? m.inc.next.oteAnnual : b.pay;
+  const ratePct = b.tfrPct + b.employerPct + b.employeePct;
+  return { value: (pay * ratePct) / 100, computed: true, pay, ratePct };
+}
+
 /** One-off inflows split into provided (with net after tax) and not yet provided. */
 export function oneOffInflows(d: Finance) {
   const all = (d.forecastAssumptions.oneOffInflows ?? []).map((x) => {
@@ -127,7 +137,7 @@ export function buildForecastInput(d: Finance, m: Model, o: ForecastOptions) {
     pensionEquityCorrelation: fa.pensionEquityCorrelation ?? 0,
     target: o.target ?? m.target,
     savingsPerYear: savings ?? 0,
-    pensionContribPerYear: fa.pensionContributionsEURperYear.value,
+    pensionContribPerYear: pensionContribution(d, m).value,
     extraInflows: inflows,
     oneOffNow: o.ingSwitch ? -m.ingSwitch.tax : 0,
     feeDragPct,

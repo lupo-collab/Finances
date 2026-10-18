@@ -7,7 +7,7 @@ import { eur, eurCompact, usd, fmtDate } from '../lib/format';
 import { cumulative, type RsuValuation } from '../lib/calc/rsu';
 import { daysBetween, parseISODate } from '../lib/calc/util';
 import { pickNum } from '../data/schema';
-import { oneOffInflows } from '../lib/forecastInputs';
+import { oneOffInflows, defaultForecastOptions } from '../lib/forecastInputs';
 
 export function Career() {
   const { d, m, today } = useApp();
@@ -61,6 +61,9 @@ export function Career() {
     ],
   };
   const tfrAnnual = pickNum(G.tfr, /annualised/i);
+  const rsuInfo = A.rsu as { vesting?: string; settlement?: string };
+  const withholdPct = defaultForecastOptions(d).rsuWithholdPct;
+  const firstVestTaxEUR = A.rsu.schedule[0] ? (A.rsu.schedule[0].usdAtGrant * withholdPct) / 100 / fx : null;
   const oneOffs = oneOffInflows(d);
   const ms = [...d.milestones].sort((a, b) => a.date.localeCompare(b.date));
 
@@ -93,6 +96,13 @@ export function Career() {
           <EChart height={260} option={rsuOption} ariaLabel={`RSU vesting: ${A.rsu.schedule.length} events, total ${usd(pts[pts.length - 1]?.cumUSD ?? 0)} at chosen valuation`} />
           <Assumptions>
             Schedule as given: {A.rsu.schedule.length} vests from {A.rsu.schedule[0].date}. EUR at stored FX {fx} USD/EUR <Prov src={d.settings.fxUsdPerEur.src} note={d.settings.fxUsdPerEur.note} />. Gross of tax.
+            {rsuInfo.vesting && <> Vesting: {rsuInfo.vesting} <Prov src={A.src} /></>}
+            {rsuInfo.settlement && <> {rsuInfo.settlement}</>}
+            {firstVestTaxEUR != null && (
+              <>
+                {' '}If shares are delivered while they can't be sold, tax on the first vest would be ≈ <b>{eurCompact(firstVestTaxEUR)}</b> paid from cash (at grant value, {withholdPct}% est.) <Prov src="estimate" />.
+              </>
+            )}
             {A.donationMatching && <> Donation matching: {A.donationMatching.rule}; deadline {fmtDate(A.donationMatching.deadline)}.</>}
           </Assumptions>
         </Card>

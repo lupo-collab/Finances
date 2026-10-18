@@ -289,3 +289,21 @@ describe('util helpers', () => {
     expect(sumWithinDays(ev, '2030-10-18', 365)).toBe(1110);
   });
 });
+
+describe('pension contributions', () => {
+  it('uses the stored run-rate, or pay × rates when a basis is given', async () => {
+    const { pensionContribution, buildForecastInput, defaultForecastOptions } = await import('../src/lib/forecastInputs');
+    const { buildModel } = await import('../src/lib/model');
+    const f = syntheticFinance();
+    const m = buildModel(f);
+    expect(pensionContribution(f, m)).toMatchObject({ value: 500, computed: false });
+    f.forecastAssumptions.pensionContributionsEURperYear.basis = { pay: 'nextOte', tfrPct: 7, employerPct: 2, employeePct: 1, src: 'test' };
+    const m2 = buildModel(f);
+    const pc = pensionContribution(f, m2);
+    expect(pc).toMatchObject({ computed: true, pay: 200, ratePct: 10 });
+    expect(pc.value).toBeCloseTo(20);
+    expect(buildForecastInput(f, m2, defaultForecastOptions(f)).input.pensionContribPerYear).toBeCloseTo(20);
+    f.forecastAssumptions.pensionContributionsEURperYear.basis = { pay: 1000, tfrPct: 5, employerPct: 0, employeePct: 0, src: 'test' };
+    expect(pensionContribution(f, buildModel(f)).value).toBeCloseTo(50);
+  });
+});

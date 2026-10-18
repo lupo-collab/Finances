@@ -5,6 +5,7 @@ import { usePalette } from '../theme';
 import { eur, eurCompact, fmtDate } from '../lib/format';
 import { pickNum } from '../data/schema';
 import { isClosedStatus, sumWithinDays, decimalsOf } from '../lib/calc/util';
+import { pensionContribution } from '../lib/forecastInputs';
 
 export function Pension() {
   const { d, m } = useApp();
@@ -33,6 +34,7 @@ export function Pension() {
   };
   const total = m.nw.buckets.pension;
   const pc = d.forecastAssumptions.pensionContributionsEURperYear;
+  const pcNow = pensionContribution(d, m);
   const tfrYtd = pickNum(m.inc.prev.tfr, /ytd/i);
   const names = funds.map((f) => f.name.toLowerCase());
   const openActions = d.actions.filter((a) => !isClosedStatus(a.status) && (/pension|comparti/i.test(a.title) || names.some((n) => a.title.toLowerCase().includes(n))));
@@ -44,9 +46,26 @@ export function Pension() {
           <EChart height={280} option={option} ariaLabel={`Pension funds over time, now ${eur(total)}`} />
         </Card>
         <Card className="span-4" title="Contributions" soft>
-          <div className="stat"><span>Run-rate used in forecasts</span><Money v={pc.value} src="estimate" note={pc.src} /></div>
+          <div className="stat">
+            <span>Per year in forecasts</span>
+            <Money v={pcNow.value} src="estimate" note={pc.basis?.src ?? pc.src} />
+          </div>
+          {pcNow.computed && pcNow.pay != null && pcNow.ratePct != null && (
+            <div className="stat small">
+              <span>How</span>
+              <span className="num">
+                {eur(pcNow.pay)} × {pcNow.ratePct.toFixed(2)}%
+              </span>
+            </div>
+          )}
+          {pcNow.computed && (
+            <div className="stat small">
+              <span>Previous run-rate</span>
+              <Money v={pc.value} src="estimate" note={pc.src} />
+            </div>
+          )}
           {tfrYtd != null && <div className="stat"><span>TFR contributions year to date</span><Money v={tfrYtd} src="payslip" /></div>}
-          <Assumptions>{pc.src}</Assumptions>
+          <Assumptions>{pc.basis?.src ?? pc.src}</Assumptions>
         </Card>
         {funds.map((f) => {
           const line = lines.find(([, v]) => v.account === f.id);

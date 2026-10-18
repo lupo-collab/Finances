@@ -228,6 +228,7 @@ export const financeSchema = z.looseObject({
     name: str,
     src: str,
     scopeOpenQuestion: str.optional(),
+    scopeDecision: z.looseObject({ text: str, date: str, src: str }).optional(),
     cashBufferEUR: num,
     sleeves: z.looseObject({ equity: sleeve, bonds: sleeve, other: sleeve }),
     googPolicy: z.looseObject({ decision: str, guardrails: str, guardrailsSrc: str }).optional(),
@@ -304,7 +305,20 @@ export const financeSchema = z.looseObject({
       src: str,
       note: str.optional(),
     }),
-    pensionContributionsEURperYear: z.looseObject({ value: num, src: str }),
+    pensionContributionsEURperYear: z.looseObject({
+      value: num,
+      src: str,
+      /** when present, contributions = pay × (tfr + employer + employee)% computed in code */
+      basis: z
+        .looseObject({
+          pay: z.union([z.literal('nextOte'), num]),
+          tfrPct: num,
+          employerPct: num,
+          employeePct: num,
+          src: str,
+        })
+        .optional(),
+    }),
     /** One-off cash inflows (e.g. closing pay). grossEUR null = not yet provided. */
     oneOffInflows: z
       .array(

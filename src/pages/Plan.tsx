@@ -69,10 +69,16 @@ export function Plan() {
           </div>
           {sumPct !== 100 && <p className="error">Equity + bonds + other = {sumPct}% (should be 100%).</p>}
           <button className="btn" onClick={() => setT(m.target)}>Reset to {d.targets.name}</button>
-          {d.targets.scopeOpenQuestion && (
+          {d.targets.scopeDecision ? (
             <Assumptions>
-              <b>Open question:</b> {d.targets.scopeOpenQuestion}
+              <Owner kind="owner" /> {fmtDate(d.targets.scopeDecision.date)}: {d.targets.scopeDecision.text}
             </Assumptions>
+          ) : (
+            d.targets.scopeOpenQuestion && (
+              <Assumptions>
+                <b>Open question:</b> {d.targets.scopeOpenQuestion}
+              </Assumptions>
+            )
           )}
           <table style={{ marginTop: 10 }}>
             <thead><tr><th>Class</th><th className="r">Target</th><th className="r">Actual</th><th className="r">Gap</th></tr></thead>
