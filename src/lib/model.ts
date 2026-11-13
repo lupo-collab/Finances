@@ -8,6 +8,9 @@ import * as cs from './calc/costs';
 import * as mg from './calc/mortgage';
 import * as rsu from './calc/rsu';
 import * as tx from './calc/tax';
+import * as rl from './calc/realised';
+import * as hs from './calc/history';
+import { sum } from './calc/util';
 
 export type Model = ReturnType<typeof buildModel>;
 
@@ -15,11 +18,11 @@ export function isEtf(p: Position): boolean {
   return !!p.ticker && p.terPct != null && p.assetClass !== 'other' && p.assetClass !== 'multi';
 }
 
+/** Bonds % of investable wealth, other's cap and the buffer; equity is whatever is left. */
 export function defaultTarget(d: Finance): tg.TargetSpec {
   return {
-    equityPct: d.targets.sleeves.equity.pct,
     bondsPct: d.targets.sleeves.bonds.pct,
-    otherPct: d.targets.sleeves.other.pct,
+    otherCapPct: d.targets.sleeves.other.pct,
     bufferEUR: d.targets.cashBufferEUR,
   };
 }
@@ -71,11 +74,60 @@ export function buildModel(d: Finance) {
   const acctName = (id: string) => d.accounts.find((a) => a.id === id)?.name ?? id;
   const ingLookThrough = lq.classTotals(lq.pieces(ingPositions, []));
 
-  // Targets
+  // Investable wealth (Luca, 17 Oct 2026): liquid portfolio + pension funds looked through + receivables in
+  // 'other'; the home stays out. Pension and receivables come from the latest net-worth snapshot.
+  const linesIn = (bucket: string) => Object.entries(latest.values).filter(([k]) => catalog[k]?.bucket === bucket);
+  const pensionLines = linesIn('pension').map(([line, valueEUR]) => {
+    const account = catalog[line].account;
+    const split = d.targets.pensionLookThrough?.[account] ?? null;
+    const t = split ? split.equity + split.bonds : 0;
+    return {
+      line,
+      account,
+      label: catalog[line].label,
+      valueEUR,
+      split,
+      equity: split && t > 0 ? (valueEUR * split.equity) / t : 0,
+      bonds: split && t > 0 ? (valueEUR * split.bonds) / t : 0,
+    };
+  });
+  const penEq = sum(pensionLines.map((p) => p.equity));
+  const penBd = sum(pensionLines.map((p) => p.bonds));
+  const pension = {
+    lines: pensionLines,
+    equity: penEq,
+    bonds: penBd,
+    /** pension lines without a look-through are left out of the allocation */
+    missing: pensionLines.filter((p) => !p.split).map((p) => p.label),
+    equityShare: penEq + penBd > 0 ? penEq / (penEq + penBd) : 1,
+  };
+  const receivable = sum(linesIn('receivable').map(([, v]) => v));
+  const wealth: tg.Wealth = { equity: classes.equity + penEq, bonds: classes.bonds + penBd, other: classes.other + receivable, cash: classes.cash };
+
+  // Targets and the default buy list (all cash above the buffer)
   const target = defaultTarget(d);
-  const gaps = tg.gaps(classes, target);
-  const targetVals = tg.targetValues(classes.total, target);
+  const targetVals = tg.classTargets(wealth, target);
+  const gaps = tg.gaps(wealth, target);
   const cashAboveBuffer = classes.cash - target.bufferEUR;
+  const sleeves = { equity: d.targets.sleeves.equity.split ?? {}, bonds: d.targets.sleeves.bonds.split ?? {} };
+  const minOrderEUR = d.targets.rules?.minOrderEUR ?? 0;
+  const plan = tg.investPlan({ wealth, target, amountEUR: Math.max(0, cashAboveBuffer), sleeves, tickerValues: tickers, minOrderEUR });
+  /** name, ISIN and TER of a sleeve ETF: from the positions, else from `targets.instruments` */
+  const instrument = (ticker: string) => {
+    const p = positions.find((x) => x.ticker === ticker);
+    const meta = d.targets.instruments?.[ticker];
+    return { ticker, name: p?.name ?? meta?.name ?? ticker, isin: p?.isin ?? meta?.isin, terPct: p?.terPct ?? meta?.terPct ?? null, held: !!p, src: p ? p.terSrc ?? p.src : meta?.src };
+  };
+
+  // Realised sales and the history replay
+  const realised = (d.realisedSales ?? []).map((s) => ({ sale: s, lines: rl.saleLines(s), totals: rl.saleTotals(s) }));
+  const H = d.historicalReturns?.rows ?? [];
+  const histEq = hs.sleeveHistory(H, sleeves.equity);
+  const histBd = hs.sleeveHistory(H, sleeves.bonds);
+  const histPlan = hs.mixHistory([
+    { weight: 100 - target.bondsPct - target.otherCapPct, series: histEq },
+    { weight: target.bondsPct, series: histBd },
+  ]);
 
   // Costs
   const etfTer = cs.knownTerCost(positions.filter(isEtf));
@@ -138,12 +190,23 @@ export function buildModel(d: Finance) {
       ingPositions,
       ingLookThrough,
       ingValue: ingPositions.reduce((a, p) => a + p.valueEUR, 0),
+      /** managed funds still held? (false once they are sold) */
+      fundsHeld: ingPositions.length > 0,
       mixByAcct: lq.classMixByAccount(pieces),
     },
+    pension,
+    receivable,
+    wealth,
     target,
     targetVals,
     gaps,
     cashAboveBuffer,
+    sleeves,
+    minOrderEUR,
+    plan,
+    instrument,
+    realised,
+    history: { equity: histEq, bonds: histBd, plan: histPlan },
     costs: { etfTer, ingCost, bollo, bolloTotal },
     mortgage: { rows, annuity, interest12, interestTotal, detr, netCashYield, gap: mort.instalmentEUR - annuity },
     rsu: { schedule: rsuSched, check: rsuCheck },

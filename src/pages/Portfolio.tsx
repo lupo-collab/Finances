@@ -155,7 +155,7 @@ export function Portfolio() {
   const core = coreSplit[0]?.[0] ?? '';
   const vwceByAcct = d.liquidPortfolio.positions.filter((p) => p.ticker === core);
   const ingTech = d.fundsOverlapNotes.ingDedicatedTech;
-  const ingTechComputed = d.liquidPortfolio.positions.filter((p) => ingTech.funds.includes(p.name)).reduce((a, p) => a + p.valueEUR, 0);
+  const ingTechComputed = ingTech ? d.liquidPortfolio.positions.filter((p) => ingTech.funds.includes(p.name)).reduce((a, p) => a + p.valueEUR, 0) : 0;
   const ingGlobal = L.ingPositions.filter((p) => /world|global/i.test(p.name) && p.assetClass === 'equity');
   const top10 = [...d.liquidPortfolio.positions].sort((a, b) => b.valueEUR - a.valueEUR).slice(0, 10);
   const top10Option = {
@@ -197,10 +197,16 @@ export function Portfolio() {
       },
     ],
   };
-  const tech = d.fundsOverlapNotes.techApprox;
+  // Tech exposure (estimate): core ETF × its IT share + other ETFs × their stated tech share + single stocks in full
+  const vw = d.fundsOverlapNotes.vwce;
+  const techCfg = d.fundsOverlapNotes.techApprox;
+  const techEUR =
+    ((L.tickers[core] ?? 0) * vw.itSectorPct) / 100 +
+    Object.entries(techCfg.techShareByTickerPct).reduce((a, [t, s]) => a + ((L.tickers[t] ?? 0) * s) / 100, 0) +
+    L.singleStock;
+  const tech = { valueEUR: techEUR, pctOfLiquid: (techEUR / total) * 100, pctOfInvested: (techEUR / (total - L.classes.cash || 1)) * 100, src: techCfg.src, note: techCfg.note };
 
   // Currency exposure (estimate): only where fund data is known; managed funds explicit "unknown"
-  const vw = d.fundsOverlapNotes.vwce;
   const cur = { EUR: 0, USD: 0, 'Mixed currencies': 0, Crypto: 0, Unknown: 0 };
   for (const p of d.liquidPortfolio.positions) {
     if (p.account === m.fundsAcct) cur.Unknown += p.valueEUR;
@@ -222,7 +228,9 @@ export function Portfolio() {
         radius: ['50%', '80%'],
         label: { color: pal.muted, fontSize: 11, formatter: (p: { name: string; percent: number }) => `${p.name}\n${p.percent.toFixed(0)}%` },
         itemStyle: { borderColor: pal.bg, borderWidth: 2 },
-        data: Object.entries(cur).map(([k, v]) => ({ name: k, value: v, itemStyle: { color: curColors[k], decal: k === 'Unknown' ? { symbol: 'rect', dashArrayX: [1, 0], dashArrayY: [2, 4], rotation: Math.PI / 4, color: 'rgba(255,255,255,0.35)' } : undefined } })),
+        data: Object.entries(cur)
+          .filter(([, v]) => v > 0)
+          .map(([k, v]) => ({ name: k, value: v, itemStyle: { color: curColors[k], decal: k === 'Unknown' ? { symbol: 'rect', dashArrayX: [1, 0], dashArrayY: [2, 4], rotation: Math.PI / 4, color: 'rgba(255,255,255,0.35)' } : undefined } })),
       },
     ],
   };
@@ -249,21 +257,50 @@ export function Portfolio() {
     aria: { enabled: true, decal: { show: true } },
   };
   const eqMean = d.forecastAssumptions.returnsNominalEUR.equity.mean;
-  const ingMidPct = (m.costs.ingCost.lowPct + m.costs.ingCost.highPct) / 2;
-  const etfEqPct = d.costs.etfEquivalentForIngEUR != null ? (d.costs.etfEquivalentForIngEUR / L.ingValue) * 100 : 0.15;
+  // the plan's blended TER: sleeve weights × each ETF's TER, mixed by the class targets (other has none)
+  const sleeveTer = (cls: 'equity' | 'bonds') => {
+    const s = m.sleeves[cls];
+    const ws = Object.values(s).reduce((a, b) => a + b, 0) || 1;
+    return Object.entries(s).reduce((a, [k, v]) => a + (v / ws) * (m.instrument(k).terPct ?? 0), 0);
+  };
+  const eqW = 100 - m.target.bondsPct - m.target.otherCapPct;
+  const planTerPct = (eqW * sleeveTer('equity') + m.target.bondsPct * sleeveTer('bonds')) / (eqW + m.target.bondsPct || 1);
+  // fee drag: managed funds still held vs their ETF equivalent, or (once sold) the sold funds vs the plan's ETFs
+  const sold = m.realised.find((r) => r.sale.account === m.fundsAcct && (r.sale.beforeSale?.costPct != null || r.sale.beforeSale?.annualCostEUR));
+  const soldCostPct = (b: NonNullable<(typeof m.realised)[number]['sale']['beforeSale']>) =>
+    b.costPct ?? (b.annualCostEUR ? ((b.annualCostEUR[0] + b.annualCostEUR[1]) / 2 / b.valueEUR) * 100 : 0);
+  const drag = m.liquid.fundsHeld
+    ? {
+        value: L.ingValue,
+        fromPct: (m.costs.ingCost.lowPct + m.costs.ingCost.highPct) / 2,
+        toPct: d.costs.etfEquivalentForIngEUR != null ? (d.costs.etfEquivalentForIngEUR / L.ingValue) * 100 : 0.15,
+        fromLabel: `${m.fundsAcctName} funds as-is`,
+        toLabel: 'ETF equivalent',
+      }
+    : sold && sold.sale.beforeSale
+      ? {
+          value: sold.totals.net,
+          fromPct: soldCostPct(sold.sale.beforeSale),
+          toPct: planTerPct,
+          fromLabel: 'Had the funds been kept',
+          toLabel: "In the plan's ETFs",
+        }
+      : null;
+  const dragFromSrc = !m.liquid.fundsHeld && sold?.sale.beforeSale?.costPct != null ? sold.sale.beforeSale.costPctSrc ?? 'sourced' : 'estimate';
   const dragYears = Array.from({ length: 11 }, (_, i) => i);
-  const dragOption = {
+  const dragOption = drag && {
     grid: { left: 56, right: 16, top: 30, bottom: 24 },
     legend: { top: 0, left: 0 },
     tooltip: { trigger: 'axis', valueFormatter: (v: number) => eur(v) },
     xAxis: { type: 'category', data: dragYears.map((y) => `${y}y`) },
     yAxis: { type: 'value', axisLabel: { formatter: (v: number) => eurCompact(v) } },
     series: [
-      { name: `${m.fundsAcctName} funds as-is (${pct(ingMidPct, 2)})`, type: 'line', symbol: 'none', lineStyle: { color: pal.bad, width: 2 }, itemStyle: { color: pal.bad }, data: dragYears.map((y) => costDrag(L.ingValue, eqMean, ingMidPct, y)) },
-      { name: `ETF equivalent (${pct(etfEqPct, 2)})`, type: 'line', symbol: 'none', lineStyle: { color: pal.good, width: 2, type: 'dashed' }, itemStyle: { color: pal.good }, data: dragYears.map((y) => costDrag(L.ingValue, eqMean, etfEqPct, y)) },
+      { name: `${drag.fromLabel} (${pct(drag.fromPct, 2)})`, type: 'line', symbol: 'none', lineStyle: { color: pal.bad, width: 2 }, itemStyle: { color: pal.bad }, data: dragYears.map((y) => costDrag(drag.value, eqMean, drag.fromPct, y)) },
+      { name: `${drag.toLabel} (${pct(drag.toPct, 2)})`, type: 'line', symbol: 'none', lineStyle: { color: pal.good, width: 2, type: 'dashed' }, itemStyle: { color: pal.good }, data: dragYears.map((y) => costDrag(drag.value, eqMean, drag.toPct, y)) },
     ],
   };
-  const drag10 = costDrag(L.ingValue, eqMean, ingMidPct, 10) - costDrag(L.ingValue, eqMean, etfEqPct, 10);
+  const drag10 = drag ? costDrag(drag.value, eqMean, drag.fromPct, 10) - costDrag(drag.value, eqMean, drag.toPct, 10) : 0;
+  const fundCostTotal = Object.values(costByAcct).reduce((a, c) => a + c.ter, 0);
 
   return (
     <>
@@ -354,14 +391,18 @@ export function Portfolio() {
               </span>
             </div>
           ))}
-          <div className="stat">
-            <span>{m.fundsAcctName} dedicated tech/growth funds ({ingTech.funds.length}) duplicate {core}'s tech tilt</span>
-            <Money v={ingTechComputed} src="computed" />
-          </div>
-          <div className="stat">
-            <span>{m.fundsAcctName} global equity funds overlapping {core}</span>
-            <span className="num">{ingGlobal.map((p) => p.name).join(', ') || '—'}</span>
-          </div>
+          {ingTech && ingTechComputed > 0 && (
+            <div className="stat">
+              <span>{m.fundsAcctName} dedicated tech/growth funds ({ingTech.funds.length}) duplicate {core}'s tech tilt</span>
+              <Money v={ingTechComputed} src="computed" />
+            </div>
+          )}
+          {ingGlobal.length > 0 && (
+            <div className="stat">
+              <span>{m.fundsAcctName} global equity funds overlapping {core}</span>
+              <span className="num">{ingGlobal.map((p) => p.name).join(', ')}</span>
+            </div>
+          )}
           <div className="stat">
             <span>{core}: US share / IT sector</span>
             <span className="num">
@@ -369,9 +410,9 @@ export function Portfolio() {
             </span>
           </div>
           <div className="stat">
-            <span>Tech share of liquid (approx.)</span>
+            <span>Tech share (approx.): {core}'s IT share, {Object.keys(techCfg.techShareByTickerPct).join(', ')} tech share, {ss} in full</span>
             <span className="num muted">
-              ≈ {pct(tech.pctOfLiquid, 0)} ({eurCompact(tech.valueEUR)}); ≈ {pct(tech.pctOfEquity, 0)} of equity <Prov src={tech.src} />
+              ≈ {eurCompact(tech.valueEUR)}: {pct(tech.pctOfLiquid, 0)} of liquid, {pct(tech.pctOfInvested, 0)} of invested <Prov src={tech.src} note={tech.note} />
             </span>
           </div>
           <h3 style={{ fontSize: 13, margin: '12px 0 4px' }} className="muted">
@@ -387,28 +428,46 @@ export function Portfolio() {
             </Assumptions>
           )}
           <h3 style={{ fontSize: 14, margin: '18px 0 2px' }}>
-            Currency exposure <Prov src="estimate" note={`${core} split by its US share; ${m.fundsAcctName} funds not classified`} />
+            Currency exposure <Prov src="estimate" note={`${core} split by its US share${m.liquid.fundsHeld ? `; ${m.fundsAcctName} funds not classified` : ''}`} />
           </h3>
-          <p className="card-sub">Where fund data is known. {m.fundsAcctName} funds are shown as unknown rather than guessed.</p>
+          <p className="card-sub">Where fund data is known.{m.liquid.fundsHeld && ` ${m.fundsAcctName} funds are shown as unknown rather than guessed.`} Cash is all in euro.</p>
           <EChart height={230} option={curOption} ariaLabel={Object.entries(cur).map(([k, v]) => `${k} ${eurCompact(v)}`).join(', ')} />
         </Card>
 
-        <Card className="span-6" title={`${m.fundsAcctName} funds carry most of the fund costs`} sub="Annual cost by account: fund TER (mid of range where estimated) + bollo/IVAFE">
+        <Card
+          className="span-6"
+          title={m.liquid.fundsHeld ? `${m.fundsAcctName} funds carry most of the fund costs` : `Running costs ≈ ${eurCompact(fundCostTotal + m.costs.bolloTotal)} a year`}
+          sub="Annual cost by account: fund TER (mid of range where estimated) + bollo/IVAFE"
+        >
           <EChart height={60 + ca.length * 34} option={costOption} ariaLabel="Annual costs by account" />
           <Assumptions>
-            ETF TER total <b>{eur(m.costs.etfTer)}</b>/yr on {m.liquid.etfTickers.join(', ')} <Prov src="computed" />. {m.fundsAcctName} funds{' '}
-            <b>
-              {eur(m.costs.ingCost.low)}–{eur(m.costs.ingCost.high)}
-            </b>
-            /yr <Prov src={d.costs.ingFundsCostSrc ?? 'estimate'} />. Bollo + IVAFE ≈ <b>{eur(m.costs.bolloTotal)}</b>/yr <Prov src="estimate" note={d.costs.bolloIvafeEstimateEUR.note} />.
+            ETF TER total <b>{eur(m.costs.etfTer)}</b>/yr on {m.liquid.etfTickers.join(', ')} <Prov src="computed" />.
+            {m.liquid.fundsHeld && (
+              <>
+                {' '}{m.fundsAcctName} funds{' '}
+                <b>
+                  {eur(m.costs.ingCost.low)}–{eur(m.costs.ingCost.high)}
+                </b>
+                /yr <Prov src={d.costs.ingFundsCostSrc ?? 'estimate'} />.
+              </>
+            )}{' '}
+            Bollo + IVAFE ≈ <b>{eur(m.costs.bolloTotal)}</b>/yr <Prov src="estimate" note={d.costs.bolloIvafeEstimateEUR.note} />. The plan's ETF mix costs {pct(planTerPct, 3)} a year <Prov src="computed" />.
           </Assumptions>
         </Card>
-        <Card className="span-6" soft title={`Over 10 years ${m.fundsAcctName} fees cost ≈ ${eurCompact(drag10)} more than ETFs`} sub={`Cumulative cost drag on today's ${eurCompact(L.ingValue)} at ${eqMean}% gross, no new money`}>
-          <EChart height={240} option={dragOption} ariaLabel={`Ten-year extra cost of ${m.fundsAcctName} funds vs ETFs about ${eurCompact(drag10)}`} />
-          <Assumptions>
-            <Prov src="estimate" /> {m.fundsAcctName} mid cost {pct(ingMidPct, 2)} vs ETF equivalent {pct(etfEqPct, 2)} ({d.costs.etfEquivalentNote}). Ignores the one-off switch tax (see Tax).
-          </Assumptions>
-        </Card>
+        {drag && dragOption && (
+          <Card
+            className="span-6"
+            soft
+            title={m.liquid.fundsHeld ? `Over 10 years ${m.fundsAcctName} fees cost ≈ ${eurCompact(drag10)} more than ETFs` : `Leaving the ${m.fundsAcctName} funds saves ≈ ${eurCompact(drag10)} in fees over 10 years`}
+            sub={`Cumulative cost drag on ${eurCompact(drag.value)}${m.liquid.fundsHeld ? '' : ' (the sale proceeds)'} at ${eqMean}% gross, no new money`}
+          >
+            <EChart height={240} option={dragOption} ariaLabel={`Ten-year fee difference about ${eurCompact(drag10)}`} />
+            <Assumptions>
+              {drag.fromLabel}: {pct(drag.fromPct, 2)} a year <Prov src={dragFromSrc} /> vs {drag.toLabel.toLowerCase()}: {pct(drag.toPct, 2)} <Prov src="computed" />.{' '}
+              {m.liquid.fundsHeld ? `${d.costs.etfEquivalentNote ?? ''} Ignores the one-off switch tax (see Tax).` : 'The tax paid on the sale is on the Tax page.'}
+            </Assumptions>
+          </Card>
+        )}
       </div>
     </>
   );

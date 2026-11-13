@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { annuity, amortisation, totalInterest, interestOverNext, detraction, balanceAfter } from '../src/lib/calc/mortgage';
 import { checkSchedule, cumulative, vestsByYear } from '../src/lib/calc/rsu';
 import { normaliseLookThrough, pieces, classTotals, accountTotals } from '../src/lib/calc/liquid';
-import { gaps, targetValues, investNewMoney, fillGaps } from '../src/lib/calc/targets';
+import { gaps, classTargets, investPlan } from '../src/lib/calc/targets';
 import { snapshotTotal, bucketTotals, marketValueTotal, lineChanges, delta } from '../src/lib/calc/networth';
 import { terCostRange, knownTerCost, bolloOnSecurities, costDrag } from '../src/lib/calc/costs';
 import { switchTaxUpperBound, paybackYears } from '../src/lib/calc/tax';
@@ -79,32 +79,67 @@ describe('liquid portfolio', () => {
   });
 });
 
-describe('targets', () => {
-  const spec = { equityPct: 80, bondsPct: 15, otherPct: 5, bufferEUR: 1000 };
-  const actual = { equity: 50000, bonds: 5000, other: 2000, cash: 43000, total: 100000 };
-  it('gap = (total − buffer) × % − actual; cash target = buffer', () => {
-    const tv = targetValues(100000, spec);
-    expect(tv.equity).toBe(79200);
-    expect(tv.cash).toBe(1000);
-    const g = gaps(actual, spec);
-    expect(g.equity).toBe(29200);
+describe('targets on investable wealth', () => {
+  const spec = { bondsPct: 15, otherCapPct: 5, bufferEUR: 1000 };
+  it('bonds = % of investable (cash above buffer included); other is a cap; equity takes the rest', () => {
+    const w = { equity: 50000, bonds: 5000, other: 2000, cash: 43000 };
+    const ct = classTargets(w, spec);
+    expect(ct.investable).toBe(99000);
+    expect(ct.bonds).toBe(14850);
+    expect(ct.otherCap).toBe(4950);
+    expect(ct.equity).toBe(99000 - 14850 - 2000);
+    const g = gaps(w, spec);
+    expect(g.equity).toBe(82150 - 50000);
+    expect(g.bonds).toBe(9850);
+    expect(g.other).toBe(2950); // room left under the cap
     expect(g.cash).toBe(-42000);
-    expect(g.equity + g.bonds + g.other + g.cash).toBeCloseTo(0, 9);
   });
-  it('fillGaps caps at the gap and spreads overflow by weight', () => {
-    expect(fillGaps(100, { x: 60, y: 60 }, { x: 1, y: 1 })).toEqual({ x: 50, y: 50 });
-    const r = fillGaps(200, { x: 60, y: 20 }, { x: 3, y: 1 });
-    expect(r.x).toBeCloseTo(60 + 90);
-    expect(r.y).toBeCloseTo(20 + 30);
+  it('an over-cap other shrinks equity, never bonds; cash below the buffer is not invested', () => {
+    const over = classTargets({ equity: 1500, bonds: 0, other: 200, cash: 300 }, { bondsPct: 15, otherCapPct: 5, bufferEUR: 0 });
+    expect(over.investable).toBe(2000);
+    expect(over.bonds).toBe(300);
+    expect(over.equity).toBe(1500);
+    expect(over.otherCap).toBe(100);
+    const low = gaps({ equity: 100, bonds: 0, other: 0, cash: 50 }, { bondsPct: 15, otherCapPct: 5, bufferEUR: 100 });
+    expect(low).toEqual({ equity: -15, bonds: 15, other: 5, cash: 50 });
   });
-  it('investNewMoney is buy-only and spends exactly the amount', () => {
-    const orders = investNewMoney({ amountEUR: 42000, actual, target: spec, sleeves: { equity: { A: 75, B: 25 }, bonds: { C: 100 } }, tickerValues: { A: 45000, B: 5000, C: 5000 } });
-    const total = orders.reduce((s, o) => s + o.amountEUR, 0);
-    expect(total).toBeCloseTo(42000, 6);
-    expect(orders.every((o) => o.amountEUR > 0)).toBe(true);
-    // B is furthest below its split, so it gets money before A
-    const b = orders.find((o) => o.ticker === 'B')!.amountEUR;
-    expect(b).toBeGreaterThan(0);
+  const base = {
+    wealth: { equity: 1000, bonds: 0, other: 0, cash: 1000 },
+    target: { bondsPct: 15, otherCapPct: 5, bufferEUR: 0 },
+    amountEUR: 1000,
+    sleeves: { equity: { A: 75, B: 25 }, bonds: { C: 100 } },
+    tickerValues: { A: 1000 },
+  };
+  it('buys each ETF up to target when the money matches the shortfall', () => {
+    // investable 2000: bonds 300, equity 1700 → A 1275, B 425, C 300
+    const p = investPlan(base);
+    expect(p.rows.map((r) => [r.ticker, r.target, r.buy])).toEqual([
+      ['A', 1275, 275],
+      ['B', 425, 425],
+      ['C', 300, 300],
+    ]);
+    expect(p.total).toBeCloseTo(1000, 9);
+    expect(p.after).toEqual({ equity: 1700, bonds: 300, other: 0, cash: 0 });
+  });
+  it('drops the smallest order under the minimum and splits its money pro rata to the shortfalls', () => {
+    const p = investPlan({ ...base, minOrderEUR: 290 });
+    expect(p.rows[0]).toMatchObject({ ticker: 'A', buy: 0, skipped: true });
+    expect(p.rows[1].buy).toBeCloseTo((425 * 1000) / 725, 9);
+    expect(p.rows[2].buy).toBeCloseTo((300 * 1000) / 725, 9);
+    // keeps dropping while more than one order is left
+    const q = investPlan({ ...base, minOrderEUR: 600 });
+    expect(q.rows.map((r) => r.buy)).toEqual([0, 1000, 0]);
+    expect(q.rows.filter((r) => r.skipped).map((r) => r.ticker)).toEqual(['A', 'C']);
+  });
+  it('holdings outside the ETFs (e.g. pension bonds) count toward the class target', () => {
+    // 400 of bonds held in a pension: bonds target 300 is already met, so all money goes to equity
+    const p = investPlan({ ...base, wealth: { equity: 1000, bonds: 400, other: 0, cash: 1000 } });
+    expect(p.rows.find((r) => r.ticker === 'C')).toMatchObject({ target: 0, buy: 0 });
+    expect(p.total).toBeCloseTo(1000, 9);
+    // ETFs already above target get nothing; the amount is still spent in full
+    const flat = investPlan({ ...base, tickerValues: { A: 5000, B: 5000, C: 5000 }, wealth: { equity: 10000, bonds: 5000, other: 0, cash: 1000 } });
+    expect(flat.rows.map((r) => r.buy)).toEqual([1000, 0, 0]);
+    expect(flat.total).toBeCloseTo(1000, 9);
   });
 });
 
@@ -167,7 +202,7 @@ describe('random + forecast', () => {
     mortgageByYear: Array.from({ length: 11 }, (_, y) => Math.max(0, 100000 - y * 10000)),
     returns: { equity: { mean: 6, vol: 16 }, bonds: { mean: 3, vol: 5 }, cash: { mean: 2, vol: 0.5 }, other: { mean: 5, vol: 30 }, pension: { mean: 4, vol: 8 }, home: { mean: 2, vol: 5 } },
     equityBondCorrelation: 0.2,
-    target: { equityPct: 80, bondsPct: 15, otherPct: 5, bufferEUR: 10000 },
+    target: { bondsPct: 15, otherCapPct: 5, bufferEUR: 10000 },
     savingsPerYear: 10000,
     pensionContribPerYear: 1000,
     inflationPct: 2,
@@ -190,6 +225,23 @@ describe('random + forecast', () => {
     const out = runForecast({ ...inp, returns: { equity: z, bonds: z, cash: z, other: z, pension: z, home: z }, equityBondCorrelation: 0 });
     expect(out.liquid[10].p10).toBeCloseTo(out.liquid[10].p90, 6);
     expect(out.liquid[10].p50).toBeCloseTo(100000 + 10 * 10000, 6);
+  });
+  it('rebalances bonds to a share of investable wealth, pension bonds included', () => {
+    const z = { mean: 0, vol: 0 };
+    const out = runForecast({
+      ...inp,
+      paths: 10,
+      start: { equity: 0, bonds: 0, other: 0, cash: 110000, pension: 20000, homeValue: 0, receivable: 0 },
+      mortgageByYear: new Array(11).fill(0),
+      returns: { equity: { mean: 10, vol: 0 }, bonds: z, cash: z, other: z, pension: z, home: z },
+      pensionEquityShare: 0.5,
+      savingsPerYear: 0,
+      pensionContribPerYear: 0,
+    });
+    // year 1: investable 100000 + 20000 → bonds 18000 − 10000 in the pension = 8000 liquid, equity 92000;
+    // year 2: equity +10% → liquid 92000 × 1.1 + 8000 + 10000 buffer
+    expect(out.liquid[1].p50).toBeCloseTo(110000, 6);
+    expect(out.liquid[2].p50).toBeCloseTo(119200, 6);
   });
   it('stress test computes loss and new mix', () => {
     const s = stressTest({ equity: 100, bonds: 0, other: 0, cash: 100 }, { equity: -50, bonds: 0, other: 0, cash: 0 });
@@ -254,7 +306,7 @@ describe('pension–equity correlation', () => {
       mortgageByYear: new Array(11).fill(0),
       returns: { equity: { mean: 6, vol: 16 }, bonds: { mean: 3, vol: 5 }, cash: { mean: 2, vol: 0.5 }, other: { mean: 5, vol: 30 }, pension: { mean: 4, vol: 12 }, home: { mean: 2, vol: 5 } },
       equityBondCorrelation: 0.2,
-      target: { equityPct: 100, bondsPct: 0, otherPct: 0, bufferEUR: 10000 },
+      target: { bondsPct: 0, otherCapPct: 0, bufferEUR: 10000 },
       savingsPerYear: 0,
       pensionContribPerYear: 0,
       inflationPct: 2,
@@ -305,5 +357,80 @@ describe('pension contributions', () => {
     expect(buildForecastInput(f, m2, defaultForecastOptions(f)).input.pensionContribPerYear).toBeCloseTo(20);
     f.forecastAssumptions.pensionContributionsEURperYear.basis = { pay: 1000, tfrPct: 5, employerPct: 0, employeePct: 0, src: 'test' };
     expect(pensionContribution(f, buildModel(f)).value).toBeCloseTo(50);
+  });
+});
+
+describe('realised sales', () => {
+  const sale = {
+    id: 's1',
+    account: 'a',
+    label: 'Funds sold',
+    date: '2030-05-02',
+    src: 'statement',
+    lines: [
+      { name: 'F1', paidEUR: 1000, grossEUR: 1200, taxEUR: 52, feeEUR: 10, netEUR: 1138, earlierNetEUR: 0 },
+      { name: 'F2', paidEUR: 2000, grossEUR: 1900, taxEUR: 0, feeEUR: 10, netEUR: 1890, earlierNetEUR: 50 },
+    ],
+    totals: { paidEUR: 3000, grossEUR: 3100, taxEUR: 52, netEUR: 3028, earlierNetEUR: 50, profitEUR: 78 },
+  };
+  it('profit = credited + dividends and earlier sales − paid; totals add up', async () => {
+    const { saleLines, saleTotals } = await import('../src/lib/calc/realised');
+    const ls = saleLines(sale);
+    expect(ls[0]).toMatchObject({ netCheck: 1138, profit: 138 });
+    expect(ls[1].profit).toBe(-60);
+    expect(ls[1].profitPct).toBeCloseTo(-3, 12);
+    expect(saleTotals(sale)).toMatchObject({ lines: 2, paid: 3000, gross: 3100, tax: 52, fee: 20, net: 3028, earlier: 50, gotBack: 3078, profit: 78 });
+  });
+  it('a loss carries for four more tax years; its tax value is 26%', async () => {
+    const { carryUntilYear, lossTaxValue } = await import('../src/lib/calc/realised');
+    expect(carryUntilYear('2030-05-02')).toBe(2034);
+    expect(lossTaxValue(-100)).toBeCloseTo(26, 12);
+  });
+});
+
+describe('history replay', () => {
+  const rows: { ticker: string; returnsPct: Record<string, number> }[] = [
+    { ticker: 'A', returnsPct: { '2001': -40, '2002': 20, '2003': 10 } },
+    { ticker: 'B', returnsPct: { '2002': 0, '2003': 4, '2001': 8 } },
+    { ticker: 'C', returnsPct: { '2003': 1 } },
+  ];
+  it('weights a sleeve over the tickers with data, mixes classes and finds the worst years', async () => {
+    const { sleeveHistory, mixHistory, worstYears } = await import('../src/lib/calc/history');
+    const eq = sleeveHistory(rows, { A: 75, X: 25 });
+    expect(eq.missing).toEqual(['X']);
+    expect(eq.years).toEqual(['2001', '2002', '2003']);
+    expect(eq.byYear['2001']).toBe(-40);
+    const bd = sleeveHistory(rows, { B: 50, C: 50 });
+    expect(bd.years).toEqual(['2003']);
+    expect(bd.byYear['2003']).toBeCloseTo(2.5, 12);
+    const mix = mixHistory([
+      { weight: 80, series: eq },
+      { weight: 20, series: sleeveHistory(rows, { B: 100 }) },
+    ]);
+    expect(mix.byYear['2001']).toBeCloseTo(0.8 * -40 + 0.2 * 8, 12);
+    expect(worstYears(mix, 2)).toEqual(['2001', '2003']);
+  });
+});
+
+describe('investable wealth in the model', () => {
+  it('adds the pension look-through and plans the default buy list', async () => {
+    const { buildModel } = await import('../src/lib/model');
+    const m = buildModel(syntheticFinance());
+    expect(m.pension.equity).toBeCloseTo(2100, 9);
+    expect(m.pension.bonds).toBeCloseTo(1400, 9);
+    expect(m.pension.equityShare).toBeCloseTo(0.6, 12);
+    expect(m.targetVals.investable).toBeCloseTo(30500, 6);
+    // equity target 24925 − (equity held outside EQ1: 2525.25 look-through + 2100 pension) = EQ1 target
+    expect(m.plan.rows.find((r) => r.ticker === 'EQ1')?.buy).toBeCloseTo(7454.5455, 3);
+    expect(m.plan.rows.find((r) => r.ticker === 'BD1')?.buy).toBe(0);
+    expect(m.plan.total).toBeCloseTo(m.cashAboveBuffer, 6);
+  });
+  it('leaves a pension line without a split out of the allocation', async () => {
+    const { buildModel } = await import('../src/lib/model');
+    const f = syntheticFinance();
+    f.targets.pensionLookThrough = {};
+    const m = buildModel(f);
+    expect(m.pension.missing).toEqual(['Pension']);
+    expect(m.wealth.equity).toBeCloseTo(m.liquid.classes.equity, 9);
   });
 });

@@ -50,8 +50,7 @@ export function syntheticFinance(): Finance {
     },
     fundsOverlapNotes: {
       vwce: { usPct: 60, itSectorPct: 30, src: 'sourced' },
-      techApprox: { valueEUR: 1, pctOfLiquid: 1, pctOfEquity: 1, src: 'estimate' },
-      ingDedicatedTech: { funds: [], valueEUR: 0, src: 'computed' },
+      techApprox: { techShareByTickerPct: { EQ1: 20 }, src: 'estimate' },
     },
     home: {
       description: 'test',
@@ -112,7 +111,10 @@ export function syntheticFinance(): Finance {
       src: 'stated',
       cashBufferEUR: 1000,
       sleeves: { equity: { pct: 80, split: { EQ1: 100 } }, bonds: { pct: 15, split: { BD1: 100 } }, other: { pct: 5 } },
-      expectedGaps: { equity: 9074.75, bonds: -1970.2, other: 350, cash: -7454.55 },
+      pensionLookThrough: { p: { equity: 60, bonds: 40, src: 'statement' } },
+      // investable = 28000 liquid + 3500 pension − 1000 buffer = 30500; bonds 15% = 4575, other cap 5% = 1525,
+      // equity = 30500 − 4575 − 1000 other = 24925; actual equity 12525.25 + 2100, bonds 6020.20 + 1400
+      expectedGaps: { equity: 10299.75, bonds: -2845.2, other: 525, cash: -7454.55 },
     },
     costs: {
       etfTerAnnualEUR: 24,

@@ -113,6 +113,24 @@ export function Pension() {
                   ))}
                 </>
               )}
+              {(() => {
+                const pl = m.pension.lines.find((p) => p.account === f.id);
+                if (!pl) return null;
+                return (
+                  <div className="stat small">
+                    <span>Counts in the target allocation as</span>
+                    <span className="num">
+                      {pl.split ? (
+                        <>
+                          {eurCompact(pl.equity)} equity + {eurCompact(pl.bonds)} bonds ({pl.split.equity}/{pl.split.bonds}) <Prov src={pl.split.src} note={pl.split.note} />
+                        </>
+                      ) : (
+                        <span className="notprov">split not yet provided</span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })()}
               <p className="small muted">{f.notes}</p>
             </Card>
           );

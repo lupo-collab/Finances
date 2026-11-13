@@ -114,8 +114,9 @@ export function buildForecastInput(d: Finance, m: Model, o: ForecastOptions) {
   // Fee drag on invested liquid assets: ETF TER + managed funds (mid of range), or ETF-equivalent after a switch
   const invested = m.liquid.classes.total - m.liquid.classes.cash;
   const ingMid = (m.costs.ingCost.low + m.costs.ingCost.high) / 2;
-  const ingAfter = d.costs.etfEquivalentForIngEUR ?? 0;
-  const feeEUR = m.costs.etfTer + (o.ingSwitch ? ingAfter : ingMid);
+  const ingAfter = m.liquid.fundsHeld ? (d.costs.etfEquivalentForIngEUR ?? 0) : 0;
+  const switching = o.ingSwitch && m.liquid.fundsHeld;
+  const feeEUR = m.costs.etfTer + (switching ? ingAfter : ingMid);
   const feeDragPct = invested > 0 ? (feeEUR / invested) * 100 : 0;
 
   const input: ForecastInput = {
@@ -136,10 +137,11 @@ export function buildForecastInput(d: Finance, m: Model, o: ForecastOptions) {
     equityBondCorrelation: fa.equityBondCorrelation,
     pensionEquityCorrelation: fa.pensionEquityCorrelation ?? 0,
     target: o.target ?? m.target,
+    pensionEquityShare: m.pension.equityShare,
     savingsPerYear: savings ?? 0,
     pensionContribPerYear: pensionContribution(d, m).value,
     extraInflows: inflows,
-    oneOffNow: o.ingSwitch ? -m.ingSwitch.tax : 0,
+    oneOffNow: switching ? -m.ingSwitch.tax : 0,
     feeDragPct,
     inflationPct: o.inflationPct ?? fa.inflationPct,
   };

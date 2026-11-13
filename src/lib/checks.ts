@@ -2,7 +2,13 @@
 // so no real numbers live in committed code. Used by `npm run verify` and the Data page.
 import type { Finance } from '../data/schema';
 import { buildModel } from './model';
-import { decimalsOf } from './calc/util';
+import { decimalsOf, parseISODate } from './calc/util';
+
+const isoPlusDays = (iso: string, days: number) => {
+  const t = parseISODate(iso);
+  t.setDate(t.getDate() + days);
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+};
 
 export type CheckStatus = 'pass' | 'warn' | 'fail' | 'skip';
 export interface Check {
@@ -56,7 +62,7 @@ export function runChecks(d: Finance, tolEUR = 1): Check[] {
   near('liq-other', 'Liquid other', m.liquid.classes.other, E.other, 0.01);
   near('liq-cash', 'Liquid cash', m.liquid.classes.cash, E.cash, 0.01);
   if (A?.classPct) for (const [c, v] of Object.entries(A.classPct)) near(`pct-${c}`, `Liquid ${c} %`, m.liquid.classPct[c as 'equity'], v, 0.005);
-  if (E.ingLookThrough) {
+  if (E.ingLookThrough && m.liquid.fundsHeld) {
     near('ing-lt-eq', `${m.fundsAcctName} look-through equity`, m.liquid.ingLookThrough.equity, E.ingLookThrough.equity, 0.01);
     near('ing-lt-bd', `${m.fundsAcctName} look-through bonds`, m.liquid.ingLookThrough.bonds, E.ingLookThrough.bonds, 0.01);
     near('ing-lt-cs', `${m.fundsAcctName} look-through cash`, m.liquid.ingLookThrough.cash, E.ingLookThrough.cash, 0.01);
@@ -70,18 +76,61 @@ export function runChecks(d: Finance, tolEUR = 1): Check[] {
 
   // Costs
   near('etf-ter', 'ETF TER cost / yr', m.costs.etfTer, d.costs.etfTerAnnualEUR);
-  near('ing-cost-lo', `${m.fundsAcctName} fund cost / yr (low)`, m.costs.ingCost.low, d.costs.ingFundsCostRangeEUR[0]);
-  near('ing-cost-hi', `${m.fundsAcctName} fund cost / yr (high)`, m.costs.ingCost.high, d.costs.ingFundsCostRangeEUR[1]);
-  near('ing-cost-lo-pct', `${m.fundsAcctName} fund cost % (low)`, m.costs.ingCost.lowPct, d.costs.ingFundsCostRangePct[0], 0.005);
-  near('ing-cost-hi-pct', `${m.fundsAcctName} fund cost % (high)`, m.costs.ingCost.highPct, d.costs.ingFundsCostRangePct[1], 0.005);
+  const CR = d.costs.ingFundsCostRangeEUR;
+  const CP = d.costs.ingFundsCostRangePct;
+  if (m.liquid.fundsHeld && CR && CP) {
+    near('ing-cost-lo', `${m.fundsAcctName} fund cost / yr (low)`, m.costs.ingCost.low, CR[0]);
+    near('ing-cost-hi', `${m.fundsAcctName} fund cost / yr (high)`, m.costs.ingCost.high, CR[1]);
+    near('ing-cost-lo-pct', `${m.fundsAcctName} fund cost % (low)`, m.costs.ingCost.lowPct, CP[0], 0.005);
+    near('ing-cost-hi-pct', `${m.fundsAcctName} fund cost % (high)`, m.costs.ingCost.highPct, CP[1], 0.005);
+  }
   near('bollo', 'Bollo + IVAFE estimate / yr', m.costs.bolloTotal, d.costs.bolloIvafeEstimateEUR.total);
 
-  // Targets
+  // Targets on investable wealth (liquid + pension look-through + receivables)
+  const S = d.targets.sleeves;
+  out.push({
+    id: 'target-pcts',
+    label: 'Target equity + bonds + other = 100%',
+    expected: '100',
+    actual: String(S.equity.pct + S.bonds.pct + S.other.pct),
+    status: Math.abs(S.equity.pct + S.bonds.pct + S.other.pct - 100) < 1e-9 ? 'pass' : 'fail',
+  });
+  for (const p of m.pension.lines) {
+    if (!p.split) {
+      out.push({ id: `pension-lt-${p.line}`, label: `${p.label}: equity/bond split`, expected: 'provided', actual: 'not yet provided (left out of the allocation)', status: 'warn' });
+      continue;
+    }
+    const s = p.split.equity + p.split.bonds;
+    out.push({ id: `pension-lt-${p.line}`, label: `${p.label}: equity + bonds split`, expected: '100', actual: String(s), status: Math.abs(s - 100) < 0.005 ? 'pass' : 'warn' });
+  }
+  if (A?.wholeWealth) {
+    near('ww-investable', 'Investable wealth (cash above buffer included)', m.targetVals.investable, A.wholeWealth.investable, 0.01);
+    near('ww-pen-eq', 'Pension look-through equity', m.pension.equity, A.wholeWealth.pensionEquity, 0.01);
+    near('ww-pen-bd', 'Pension look-through bonds', m.pension.bonds, A.wholeWealth.pensionBonds, 0.01);
+  }
   const G = d.targets.expectedGaps;
-  near('gap-equity', 'Gap equity', m.gaps.equity, G.equity);
-  near('gap-bonds', 'Gap bonds', m.gaps.bonds, G.bonds);
-  near('gap-other', 'Gap other', m.gaps.other, G.other);
-  near('gap-cash', 'Gap cash', m.gaps.cash, G.cash);
+  near('gap-equity', 'Gap equity (investable wealth)', m.gaps.equity, G.equity);
+  near('gap-bonds', 'Gap bonds (investable wealth)', m.gaps.bonds, G.bonds);
+  near('gap-other', 'Room under the other cap', m.gaps.other, G.other);
+  near('gap-cash', 'Gap cash (buffer − cash)', m.gaps.cash, G.cash);
+  if (A?.investPlan) {
+    near('plan-amount', 'Buy list: amount (cash above buffer)', Math.max(0, m.cashAboveBuffer), A.investPlan.amountEUR, 0.01);
+    for (const [t, v] of Object.entries(A.investPlan.buys)) near(`plan-${t}`, `Buy list: ${t}`, m.plan.rows.find((r) => r.ticker === t)?.buy ?? 0, v, 0.01);
+    near('plan-total', 'Buy list spends the amount', m.plan.total, Math.max(0, m.cashAboveBuffer), 0.01);
+  }
+
+  // Realised sales: each line's net = gross − tax − fee; lines add up to the stated totals; proceeds in cash
+  for (const r of m.realised) {
+    r.lines.forEach((l, i) => near(`sale-${r.sale.id}-${i}`, `${l.name}: gross − tax − fee = credited`, l.netCheck, l.net, 0.005));
+    const T = r.sale.totals;
+    near(`sale-${r.sale.id}-paid`, `${r.sale.label}: paid in`, r.totals.paid, T.paidEUR, 0.01);
+    near(`sale-${r.sale.id}-gross`, `${r.sale.label}: gross sale`, r.totals.gross, T.grossEUR, 0.01);
+    near(`sale-${r.sale.id}-tax`, `${r.sale.label}: tax withheld`, r.totals.tax, T.taxEUR, 0.01);
+    near(`sale-${r.sale.id}-net`, `${r.sale.label}: credited`, r.totals.net, T.netEUR, 0.01);
+    near(`sale-${r.sale.id}-earlier`, `${r.sale.label}: dividends and earlier sales`, r.totals.earlier, T.earlierNetEUR, 0.01);
+    near(`sale-${r.sale.id}-profit`, `${r.sale.label}: profit`, r.totals.profit, T.profitEUR, 0.01);
+    for (const c of d.liquidPortfolio.cash.filter((x) => x.fromSale === r.sale.id)) near(`sale-${r.sale.id}-cash`, `${c.label} = sale proceeds`, c.valueEUR, r.totals.net, 0.01);
+  }
 
   // Single-stock concentration
   if (A?.singleStock) {
@@ -98,9 +147,18 @@ export function runChecks(d: Finance, tolEUR = 1): Check[] {
   near('mort-detr', 'Detraction next year', m.mortgage.detr.amount, M.detraction.nextYearEUR);
   near('mort-eff', 'Effective rate after detraction %', m.mortgage.detr.effectiveRatePct, M.detraction.effectiveRatePct, 0.005);
 
-  // Tax
-  near('ing-gains', `${m.fundsAcctName} winners gain`, m.ingSwitch.gains, d.tax.ingSwitch.winnersGainEUR, 0.01);
-  near('ing-tax', `${m.fundsAcctName} switch tax upper bound`, m.ingSwitch.tax, d.tax.ingSwitch.maxTaxAt26EUR, 0.01);
+  // Tax (switch estimate only while the managed funds are held)
+  if (m.liquid.fundsHeld && d.tax.ingSwitch) {
+    near('ing-gains', `${m.fundsAcctName} winners gain`, m.ingSwitch.gains, d.tax.ingSwitch.winnersGainEUR, 0.01);
+    near('ing-tax', `${m.fundsAcctName} switch tax upper bound`, m.ingSwitch.tax, d.tax.ingSwitch.maxTaxAt26EUR, 0.01);
+  }
+
+  // Next employer: donation-matching deadline = start + 90 days
+  const next = m.inc.next;
+  if (next.donationMatching) {
+    const exp = isoPlusDays(next.startDate, 90);
+    out.push({ id: 'donation-deadline', label: 'Donation pledge deadline = start + 90 days', expected: exp, actual: next.donationMatching.deadline, status: next.donationMatching.deadline === exp ? 'pass' : 'fail' });
+  }
 
   // RSU
   const rc = m.rsu.check;

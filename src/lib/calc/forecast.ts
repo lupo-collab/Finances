@@ -1,4 +1,5 @@
 import { cholesky, lognormalParams, mulberry32, normalSampler, percentile } from './random';
+import type { TargetSpec } from './targets';
 
 export interface RA {
   mean: number; // % nominal arithmetic
@@ -24,7 +25,10 @@ export interface ForecastInput {
   equityBondCorrelation: number;
   /** correlation of pension returns with equity returns (0 = independent) */
   pensionEquityCorrelation?: number;
-  target: { equityPct: number; bondsPct: number; otherPct: number; bufferEUR: number };
+  /** allocation rule, see calc/targets: bonds a share of investable wealth incl. pension, other capped, equity the rest */
+  target: TargetSpec;
+  /** equity share of the pension (look-through); the rest counts as bonds. Default 1. */
+  pensionEquityShare?: number;
   savingsPerYear: number;
   pensionContribPerYear: number;
   /** extra inflow into the liquid portfolio at the end of year i (index 1..years) */
@@ -53,7 +57,7 @@ export interface ForecastOutput {
 /**
  * Annual-step Monte Carlo: lognormal returns per bucket, equity–bond correlation via Cholesky,
  * pension returns optionally correlated with equity,
- * end-of-year contributions, annual rebalancing of the liquid portfolio to target,
+ * end-of-year contributions, annual rebalancing of the liquid portfolio to target (pension counted, not traded),
  * deterministic mortgage amortisation. Seeded, so the same inputs give the same output.
  */
 export function runForecast(inp: ForecastInput): ForecastOutput {
@@ -75,8 +79,8 @@ export function runForecast(inp: ForecastInput): ForecastOutput {
   const fee = (inp.feeDragPct ?? 0) / 100;
   const rhoPE = Math.max(-1, Math.min(1, inp.pensionEquityCorrelation ?? 0));
   const rhoPEc = Math.sqrt(1 - rhoPE * rhoPE);
-  const tsum = inp.target.equityPct + inp.target.bondsPct + inp.target.otherPct || 1;
-  const w = { e: inp.target.equityPct / tsum, b: inp.target.bondsPct / tsum, o: inp.target.otherPct / tsum };
+  const pes = Math.max(0, Math.min(1, inp.pensionEquityShare ?? 1));
+  const { bondsPct, otherCapPct, bufferEUR } = inp.target;
 
   const nw = Array.from({ length: N + 1 }, () => new Float64Array(P));
   const lq = Array.from({ length: N + 1 }, () => new Float64Array(P));
@@ -105,13 +109,25 @@ export function runForecast(inp: ForecastInput): ForecastOutput {
       // end-of-year contributions
       c += inp.savingsPerYear + (inp.extraInflows?.[y] ?? 0);
       pen += inp.pensionContribPerYear;
-      // annual rebalance to target
+      // annual rebalance: cash back to the buffer; bonds = bondsPct of investable wealth (liquid above the buffer
+      // + pension + receivable), the pension's own bonds included; other is never bought and is trimmed to its
+      // cap; equity takes the rest. Only the liquid part trades.
       const liquid = e + b + o + c;
-      const cashT = Math.min(inp.target.bufferEUR, Math.max(0, liquid));
-      const inv = liquid - cashT;
-      e = inv * w.e;
-      b = inv * w.b;
-      o = inv * w.o;
+      let cashT = Math.min(bufferEUR, Math.max(0, liquid));
+      const inv = liquid - cashT + pen + rec;
+      const oCap = (inv * otherCapPct) / 100;
+      const oT = o + rec > oCap ? Math.max(0, oCap - rec) : o;
+      let pool = liquid - cashT - oT;
+      if (pool < 0) {
+        cashT += pool;
+        pool = 0;
+      }
+      const bTot = (inv * bondsPct) / 100;
+      const eT = Math.max(0, inv - bTot - oT - rec - pen * pes);
+      const bT = Math.max(0, bTot - pen * (1 - pes));
+      e = eT + bT > 0 ? (pool * eT) / (eT + bT) : pool;
+      b = eT + bT > 0 ? (pool * bT) / (eT + bT) : 0;
+      o = oT;
       c = cashT;
       lq[y][p] = liquid;
       nw[y][p] = liquid + pen + home - (inp.mortgageByYear[y] ?? 0) + rec;

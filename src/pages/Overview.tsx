@@ -35,13 +35,17 @@ export function Overview() {
   const snapTotals = m.snapRows.map((r) => r.total);
   const liquidSpark = m.snapRows.map((r) => r.buckets.invested + r.buckets.cash);
 
-  // Allocation vs plan
+  // Allocation vs plan, on investable wealth (liquid + pension look-through + loan)
   const cls = m.liquid.classes;
-  const tv = m.targetVals;
+  const wl = m.wealth;
+  const tv = { equity: m.targetVals.equity, bonds: m.targetVals.bonds, other: m.targetVals.otherCap, cash: m.targetVals.cash };
+  const inv = m.targetVals.investable || 1;
+  const penOf = { equity: m.pension.equity, bonds: m.pension.bonds, other: 0, cash: 0 };
   const gapText = (c: (typeof ASSET_CLASSES)[number]) => {
     const g = m.gaps[c];
+    if (c === 'other') return g >= 0 ? `cap: ${eurCompact(g)} room left` : `${eurCompact(-g)} over the cap`;
+    if (c === 'cash') return g < 0 ? `${eurCompact(-g)} above the buffer` : `${eurCompact(g)} below the buffer`;
     if (Math.abs(g) < 1000) return `on target (${signed(eurCompact(g), g)})`;
-    if (c === 'cash') return g < 0 ? `${eurCompact(-g)} above target` : `${eurCompact(g)} below target`;
     return g > 0 ? `buy ${eurCompact(g)} ${c}` : `${eurCompact(-g)} over target`;
   };
   const allocOption = {
@@ -51,7 +55,7 @@ export function Overview() {
       axisPointer: { type: 'shadow' },
       formatter: (ps: { dataIndex: number }[]) => {
         const c = [...ASSET_CLASSES].reverse()[ps[0].dataIndex];
-        return `<b>${CLASS_LABEL[c]}</b><br/>Actual ${eur(cls[c])} (${pct(m.liquid.classPct[c])})<br/>Target ${eur(tv[c])}<br/>Gap ${eur(m.gaps[c])}`;
+        return `<b>${CLASS_LABEL[c]}</b><br/>Actual ${eur(wl[c])}${c !== 'cash' ? ` (${pct((wl[c] / inv) * 100)})` : ''}${penOf[c] > 0 ? `<br/>of which pension ${eur(penOf[c])}` : ''}<br/>${c === 'other' ? 'Cap' : c === 'cash' ? 'Buffer' : 'Target'} ${eur(tv[c])}<br/>Gap ${eur(m.gaps[c])}`;
       },
     },
     xAxis: { type: 'value', axisLabel: { formatter: (v: number) => eurCompact(v) } },
@@ -65,7 +69,7 @@ export function Overview() {
         name: 'Actual',
         type: 'bar',
         barWidth: 16,
-        data: [...ASSET_CLASSES].reverse().map((c) => ({ value: cls[c], itemStyle: { color: pal[c], borderRadius: 4 } })),
+        data: [...ASSET_CLASSES].reverse().map((c) => ({ value: wl[c], itemStyle: { color: pal[c], borderRadius: 4 } })),
       },
       {
         name: 'Target',
@@ -138,23 +142,37 @@ export function Overview() {
     cards.push({
       tag: 'Cash',
       title: `Cash is ${eurCompact(m.cashAboveBuffer)} above your buffer`,
-      body: `${eur(cls.cash)} in cash (incl. fund look-through) vs a ${eur(S.cashBufferEUR)} buffer.`,
+      body: `${eur(cls.cash)} in cash vs a ${eur(S.cashBufferEUR)} buffer. The buy list on the Plan page spends it.`,
       to: '/plan',
+    });
+  const recentSale = m.realised.find((r) => daysBetween(parseISODate(r.sale.date), today) <= 60);
+  if (recentSale)
+    cards.push({
+      tag: 'Sold',
+      title: `${recentSale.sale.label}: ${eurCompact(recentSale.totals.net)} credited`,
+      body: `${fmtDate(recentSale.sale.date)}. Profit ${eurCompact(recentSale.totals.profit)} on ${eurCompact(recentSale.totals.paid)} paid in, after ${eurCompact(recentSale.totals.tax)} tax.`,
+      to: '/tax',
     });
   const ingLo = m.costs.ingCost.low;
   const ingHi = m.costs.ingCost.high;
-  if (ingLo > m.costs.etfTer)
+  if (m.liquid.fundsHeld && ingLo > m.costs.etfTer)
     cards.push({
       tag: 'Costs',
       title: `${m.fundsAcctName} funds cost ≈ ${eurCompact(ingLo)}–${eurCompact(ingHi)} a year`,
       body: `${pct(m.costs.ingCost.lowPct, 2)}–${pct(m.costs.ingCost.highPct, 2)} on ${eurCompact(m.liquid.ingValue)}, vs ≈ ${eurCompact(m.costs.etfTer)} for all ETFs (${eurCompact(m.liquid.classes.total - m.liquid.ingValue)}). Estimate.`,
       to: '/portfolio',
     });
-  for (const [acct, v] of Object.entries(m.deposits)) {
-    if (v >= 0.9 * S.maxDepositPerBankEUR) {
-      const name = d.accounts.find((a) => a.id === acct)?.name ?? acct;
-      cards.push({ tag: 'Deposits', title: `${name} holds ${eurCompact(v)} in deposits`, body: `Close to the ${eur(S.maxDepositPerBankEUR)} per-bank limit you set.`, to: '/accounts' });
-    }
+  const nearLimit = Object.entries(m.deposits)
+    .filter(([, v]) => v >= 0.9 * S.maxDepositPerBankEUR)
+    .sort((a, b) => b[1] - a[1]);
+  if (nearLimit.length) {
+    const over = nearLimit.some(([, v]) => v > S.maxDepositPerBankEUR);
+    cards.push({
+      tag: 'Deposits',
+      title: nearLimit.map(([a, v]) => `${m.acctName(a)} ${eurCompact(v)}`).join(' · '),
+      body: `${over ? 'Above' : 'Close to'} the ${eur(S.maxDepositPerBankEUR)} per-bank limit you set.`,
+      to: '/accounts',
+    });
   }
   if (m.liquid.singleStockPct >= 0.8 * S.googMaxShareOfLiquidPct)
     cards.push({ tag: 'Concentration', title: `${m.liquid.singleStockName} is ${pct(m.liquid.singleStockPct, 2)} of liquid`, body: `Guardrail: ${pct(S.googMaxShareOfLiquidPct)}.`, to: '/portfolio' });
@@ -187,10 +205,10 @@ export function Overview() {
         <Card className="kpi span-3">
           <div className="kpi-label">Liquid portfolio</div>
           <div className="kpi-value">
-            <Money v={cls.total} compact src="computed" note={`Positions + cash across ${Object.keys(m.liquid.acctTotals).map(m.acctName).join(', ')} (statement values)`} />
+            <Money v={cls.total} compact src="computed" note={`Positions + cash across ${Object.keys(m.liquid.acctTotals).map(m.acctName).join(', ')}. ${d.liquidPortfolio.asOfNote ?? `Statement values at ${d.liquidPortfolio.asOf}.`}`} />
           </div>
           <div className="kpi-delta muted">
-            {pct(m.liquid.classPct.equity, 0)} equity · {pct(m.liquid.classPct.cash, 0)} cash
+            {pct(m.liquid.classPct.equity, 0)} equity · {pct(m.liquid.classPct.cash, 0)} cash · {fmtDate(d.liquidPortfolio.asOf, { day: 'numeric', month: 'short' })}
           </div>
           <EChart height={40} option={sparkline(liquidSpark, pal.equity)} ariaLabel="Invested plus cash over snapshots (sheet values)" />
         </Card>
@@ -238,7 +256,7 @@ export function Overview() {
           title={m.gaps.equity > 0 ? `Equity is ${eurCompact(m.gaps.equity)} below plan` : 'Allocation vs plan'}
           sub={
             <>
-              Liquid portfolio vs {d.targets.name}: {m.target.equityPct}/{m.target.bondsPct}/{m.target.otherPct} + {eurCompact(m.target.bufferEUR)} buffer. The tick shows the target.
+              Investable wealth ({eurCompact(m.targetVals.investable)}: liquid + pension funds looked through + loan, home and buffer out) vs {d.targets.name}: bonds {m.target.bondsPct}%, other at most {m.target.otherCapPct}%, equity the rest, {eurCompact(m.target.bufferEUR)} buffer. The tick shows the target.
             </>
           }
         >

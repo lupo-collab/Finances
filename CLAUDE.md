@@ -58,6 +58,19 @@ update commits only `public/data.enc.json`; `UPDATE.md` has Luca's monthly steps
   scripts and by `src/session.ts` (fetch, unlock, "remember device" as a non-extractable key in
   IndexedDB). Decrypted data lives only in React state; `App.tsx` handles the 15-minute idle lock.
   Every encrypt uses a new salt, so remembered device keys stop working after an update. That's by design.
+- **Targets (Luca's rule, 17 Oct 2026).** The 80/15/5 applies to *investable wealth*: the liquid
+  portfolio + the pension funds looked through (`targets.pensionLookThrough`, by account) + receivables
+  (in 'other'); the home and the cash buffer stay out. It is not the liquid portfolio alone. Bonds =
+  `sleeves.bonds.pct` of it. 'Other' (`sleeves.other.pct`) is a cap, never bought; what it leaves unused goes
+  to equity, which takes the rest. `investPlan` in `src/lib/calc/targets.ts` is the buy-only order list:
+  the same algorithm as Luca's "Ribilanciatore 80/15/5" page, with `targets.rules.minOrderEUR`. The
+  forecast's annual rebalance uses the same rule.
+- **Realised sales.** `realisedSales` holds the lines plus the totals as stated → `src/lib/calc/realised.ts`.
+  Checks: per line, gross − tax − fee = net; the lines add up to the totals; a cash line with
+  `fromSale` equals the proceeds. Managed-fund views (switch tax, fund costs) show only while such funds are
+  held (`m.liquid.fundsHeld`).
+- **History replay.** `historicalReturns` holds per-ETF calendar-year returns → `src/lib/calc/history.ts`
+  (sleeve-weighted). It feeds the Scenarios stress-test presets and chart.
 - **Forecast.** `src/lib/forecastInputs.ts` turns data + model + UI options into a `ForecastInput`:
   savings case, one-offs, RSU vests net of withholding, contingent stake, fund switch with fee drag,
   pension contributions. `src/lib/calc/forecast.ts` `runForecast` is a seeded Monte Carlo:
@@ -115,4 +128,10 @@ update commits only `public/data.enc.json`; `UPDATE.md` has Luca's monthly steps
   show on the Plan page.
 - `targets.scopeDecision` holds Luca's recorded decision on where 80/15/5 applies (shown on the
   Plan page instead of `scopeOpenQuestion`).
+- `targets.pensionLookThrough`: one split per pension account. Prefer a statement split; a pension line
+  without one is left out of the allocation and verify warns. `targets.instruments` gives the name, ISIN and
+  TER of sleeve ETFs not held yet.
+- Selling a position in full: remove it, add the proceeds as a cash line with `fromSale`, record the sale in
+  `realisedSales`, and add any loss to `tax.realisedLosses`. Give `liquidPortfolio.asOfNote` when accounts
+  end up at different dates.
 - Assumptions marked `judgment` were set by Claude (some delegated by Luca, see `updateLog`).

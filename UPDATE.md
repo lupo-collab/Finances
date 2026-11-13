@@ -8,6 +8,10 @@
    `expectedTotal` once you have reconciled it. Give every new number a `src`.
    - A pension or other statement for an account the sheet tracks: add it to `accountStatements`.
    - One-off money coming in (bonus, payout): add it to `forecastAssumptions.oneOffInflows`.
+   - A position sold in full: remove it, put the proceeds in a cash line with `fromSale`, and record the
+     sale (fund by fund) in `realisedSales`; a loss goes to `tax.realisedLosses`.
+   - The buy list on the Plan page uses the latest snapshot's pension values and
+     `targets.pensionLookThrough`; update the split when a pension statement shows a new one.
    - Open data requests are on the site's Plan page (Actions, type "data"/"check").
 3. **Check it.** Run `npm run verify` and fix anything red. Warnings (⚠) are known sheet differences.
 4. **Encrypt it.** Run `npm run encrypt`. You type the passphrase twice; it is never written to disk.

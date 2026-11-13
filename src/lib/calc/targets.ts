@@ -1,101 +1,146 @@
 import type { AssetClass, Position } from '../../data/schema';
-import type { ClassTotals } from './liquid';
-
-export interface TargetSpec {
-  equityPct: number;
-  bondsPct: number;
-  otherPct: number;
-  bufferEUR: number;
-}
 
 export type ClassMap = Record<AssetClass, number>;
 
-/** investable = liquid − buffer; class target = investable × %; cash target = buffer; gap = target − actual. */
-export function targetValues(total: number, t: TargetSpec): ClassMap {
-  const investable = total - t.bufferEUR;
+/**
+ * Luca's allocation rule (decided 17 Oct 2026, recorded in `targets.scopeDecision`):
+ * bonds are `bondsPct` of all investable wealth, pension funds included (looked through);
+ * 'other' (single stock, crypto, private equity, loans) is a cap, not a target: it is never bought and
+ * whatever it leaves unused goes to equity; equity takes the rest. The cash buffer and the home stay outside.
+ */
+export interface TargetSpec {
+  bondsPct: number;
+  otherCapPct: number;
+  bufferEUR: number;
+}
+
+/** Investable wealth by class: liquid portfolio + pension look-through, receivables in 'other'; cash = all liquid cash. */
+export type Wealth = ClassMap;
+
+export const cashAboveBuffer = (w: Wealth, t: TargetSpec): number => Math.max(0, w.cash - t.bufferEUR);
+
+export interface ClassTargets {
+  /** invested wealth + the cash being invested (buffer and home excluded) */
+  investable: number;
+  equity: number;
+  bonds: number;
+  /** ceiling for 'other' */
+  otherCap: number;
+  /** the buffer */
+  cash: number;
+}
+
+/** Class targets once `cashInvested` (default: all cash above the buffer) joins the invested wealth. */
+export function classTargets(w: Wealth, t: TargetSpec, cashInvested = cashAboveBuffer(w, t)): ClassTargets {
+  const investable = w.equity + w.bonds + w.other + Math.max(0, cashInvested);
+  const bonds = (investable * t.bondsPct) / 100;
   return {
-    equity: (investable * t.equityPct) / 100,
-    bonds: (investable * t.bondsPct) / 100,
-    other: (investable * t.otherPct) / 100,
+    investable,
+    bonds,
+    equity: Math.max(0, investable - bonds - w.other),
+    otherCap: (investable * t.otherCapPct) / 100,
     cash: t.bufferEUR,
   };
 }
 
-export function gaps(actual: ClassTotals, t: TargetSpec): ClassMap {
-  const tv = targetValues(actual.total, t);
-  return {
-    equity: tv.equity - actual.equity,
-    bonds: tv.bonds - actual.bonds,
-    other: tv.other - actual.other,
-    cash: tv.cash - actual.cash,
-  };
+/** Target − actual per class (positive = buy). 'other' gives the room left under its cap; cash gives buffer − cash. */
+export function gaps(w: Wealth, t: TargetSpec): ClassMap {
+  const ct = classTargets(w, t);
+  return { equity: ct.equity - w.equity, bonds: ct.bonds - w.bonds, other: ct.otherCap - w.other, cash: ct.cash - w.cash };
 }
 
-export interface Order {
-  assetClass: AssetClass;
-  ticker: string; // "TBD" or "other" when no instrument chosen yet
-  amountEUR: number;
+export type SleeveClass = 'equity' | 'bonds';
+
+export interface PlanRow {
+  ticker: string;
+  assetClass: SleeveClass;
+  /** weight inside its sleeve, % */
+  weightPct: number;
+  current: number;
+  target: number;
+  deficit: number;
+  buy: number;
+  after: number;
+  /** below target, but its share of the money was under the minimum order */
+  skipped: boolean;
 }
 
-export interface InvestInput {
-  amountEUR: number;
-  actual: ClassTotals; // must already include the amount as cash
+export interface PlanInput {
+  wealth: Wealth;
   target: TargetSpec;
-  /** sleeve splits in % (e.g. {AAA:75, BBB:15, CCC:10}) */
-  sleeves: Partial<Record<AssetClass, Record<string, number>>>;
-  /** current value per ticker (across accounts) */
+  /** new money invested now; it joins the investable wealth (cash not invested stays aside, like the buffer) */
+  amountEUR: number;
+  /** ETF weights per sleeve, e.g. { equity: { AAA: 75, BBB: 25 } } */
+  sleeves: Partial<Record<SleeveClass, Record<string, number>>>;
+  /** current liquid value per ticker */
   tickerValues: Record<string, number>;
+  minOrderEUR?: number;
 }
 
-/** Allocate `amount` across buckets proportionally to positive gaps, capped by the gap; overflow by weight. */
-export function fillGaps(amount: number, gapMap: Record<string, number>, weights: Record<string, number>): Record<string, number> {
-  const keys = Object.keys(weights);
-  const out: Record<string, number> = Object.fromEntries(keys.map((k) => [k, 0]));
-  if (amount <= 0) return out;
-  const pos = keys.map((k) => Math.max(0, gapMap[k] ?? 0));
-  const posSum = pos.reduce((a, b) => a + b, 0);
-  let left = amount;
-  if (posSum > 0) {
-    const scale = Math.min(1, amount / posSum);
-    keys.forEach((k, i) => {
-      out[k] = pos[i] * scale;
-    });
-    left = amount - posSum * scale;
-  }
-  if (left > 1e-9) {
-    const wSum = keys.reduce((a, k) => a + (weights[k] ?? 0), 0);
-    if (wSum > 0) keys.forEach((k) => (out[k] += (left * (weights[k] ?? 0)) / wSum));
-  }
-  return out;
+export interface Plan {
+  targets: ClassTargets;
+  rows: PlanRow[];
+  total: number;
+  before: ClassMap;
+  /** class totals after the buys; cash = money left unspent */
+  after: ClassMap;
+  /** other ÷ investable */
+  otherShare: number;
 }
 
 /**
- * Buy-only plan: close class gaps first (equity/bonds/other), then within each class
- * move instruments toward the sleeve split. Money comes out of cash.
+ * Buy-only orders. Each ETF's target is its sleeve weight × (class target − what the class holds outside the
+ * sleeve, e.g. the pension look-through). Money goes to ETFs below target in proportion to the shortfall; the
+ * smallest order under the minimum is dropped and the split redone, while more than one ETF is left. With no
+ * shortfall anywhere the money is spread by target. Same algorithm as the "Ribilanciatore 80/15/5" page.
  */
-export function investNewMoney(inp: InvestInput): Order[] {
-  const g = gaps(inp.actual, inp.target);
-  const classWeights = { equity: inp.target.equityPct, bonds: inp.target.bondsPct, other: inp.target.otherPct };
-  const byClass = fillGaps(inp.amountEUR, g, classWeights);
-  const tv = targetValues(inp.actual.total, inp.target);
-  const orders: Order[] = [];
-  for (const cls of ['equity', 'bonds', 'other'] as const) {
-    const amt = byClass[cls];
-    if (amt <= 0.005) continue;
-    const split = inp.sleeves[cls];
-    if (!split || Object.keys(split).length === 0) {
-      orders.push({ assetClass: cls, ticker: cls, amountEUR: amt });
-      continue;
+export function investPlan(inp: PlanInput): Plan {
+  const w = inp.wealth;
+  const C = Math.max(0, inp.amountEUR);
+  const minOrder = Math.max(0, inp.minOrderEUR ?? 0);
+  const ct = classTargets(w, inp.target, C);
+  const rows: PlanRow[] = [];
+  for (const cls of ['equity', 'bonds'] as const) {
+    const split = inp.sleeves[cls] ?? {};
+    const wsum = Object.values(split).reduce((a, b) => a + b, 0);
+    if (wsum <= 0) continue;
+    const held = Object.keys(split).reduce((a, k) => a + (inp.tickerValues[k] ?? 0), 0);
+    const sleeveTarget = Math.max(0, ct[cls] - (w[cls] - held));
+    for (const [ticker, wt] of Object.entries(split)) {
+      const current = inp.tickerValues[ticker] ?? 0;
+      const target = (sleeveTarget * wt) / wsum;
+      rows.push({ ticker, assetClass: cls, weightPct: (wt / wsum) * 100, current, target, deficit: Math.max(0, target - current), buy: 0, after: current, skipped: false });
     }
-    const splitSum = Object.values(split).reduce((a, b) => a + b, 0);
-    const tickerGaps: Record<string, number> = {};
-    for (const [tk, pct] of Object.entries(split)) {
-      tickerGaps[tk] = (tv[cls] * pct) / splitSum - (inp.tickerValues[tk] ?? 0);
-    }
-    const alloc = fillGaps(amt, tickerGaps, split);
-    for (const [tk, a] of Object.entries(alloc)) if (a > 0.005) orders.push({ assetClass: cls, ticker: tk, amountEUR: a });
   }
-  return orders;
+  const active = rows.map((r) => r.deficit > 0);
+  if (C > 0 && active.some(Boolean)) {
+    for (;;) {
+      const D = rows.reduce((a, r, i) => a + (active[i] ? r.deficit : 0), 0);
+      rows.forEach((r, i) => (r.buy = active[i] ? (r.deficit * C) / D : 0));
+      const n = active.filter(Boolean).length;
+      let idx = -1;
+      rows.forEach((r, i) => {
+        if (active[i] && r.buy < minOrder && (idx < 0 || r.buy < rows[idx].buy)) idx = i;
+      });
+      if (idx < 0 || n <= 1) break;
+      active[idx] = false;
+      rows[idx].skipped = true;
+    }
+  } else if (C > 0 && rows.length) {
+    const T = rows.reduce((a, r) => a + r.target, 0);
+    rows.forEach((r) => (r.buy = T > 0 ? (C * r.target) / T : C / rows.length));
+  }
+  rows.forEach((r) => (r.after = r.current + r.buy));
+  const bought = (cls: SleeveClass) => rows.filter((r) => r.assetClass === cls).reduce((a, r) => a + r.buy, 0);
+  const total = rows.reduce((a, r) => a + r.buy, 0);
+  return {
+    targets: ct,
+    rows,
+    total,
+    before: { equity: w.equity, bonds: w.bonds, other: w.other, cash: C },
+    after: { equity: w.equity + bought('equity'), bonds: w.bonds + bought('bonds'), other: w.other, cash: C - total },
+    otherShare: ct.investable > 0 ? w.other / ct.investable : 0,
+  };
 }
 
 /** Positive unrealised gains (winners) on a set of positions. */

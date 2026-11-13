@@ -42,3 +42,38 @@ describe('account statement check with a rounded unit price', () => {
     expect(runChecks(parseFinance(f)).find((c) => c.id.startsWith('stmt-units-'))?.status).toBe('fail');
   });
 });
+
+describe('realised sale checks', () => {
+  const withSale = () => {
+    const f = syntheticFinance();
+    f.realisedSales = [
+      {
+        id: 's1',
+        account: 'a',
+        label: 'Funds sold',
+        date: '2030-05-02',
+        src: 'statement',
+        lines: [
+          { name: 'F1', paidEUR: 1000, grossEUR: 1200, taxEUR: 52, feeEUR: 10, netEUR: 1138, earlierNetEUR: 0 },
+          { name: 'F2', paidEUR: 2000, grossEUR: 1900, taxEUR: 0, feeEUR: 10, netEUR: 1890, earlierNetEUR: 50 },
+        ],
+        totals: { paidEUR: 3000, grossEUR: 3100, taxEUR: 52, netEUR: 3028, earlierNetEUR: 50, profitEUR: 78 },
+      },
+    ];
+    return f;
+  };
+  it('passes when the lines add up, and checks the proceeds held in cash', () => {
+    const f = withSale();
+    f.liquidPortfolio.cash[1] = { ...f.liquidPortfolio.cash[1], fromSale: 's1', valueEUR: 3028 };
+    const cs = runChecks(parseFinance(f)).filter((c) => c.id.startsWith('sale-'));
+    expect(cs.length).toBe(9);
+    expect(cs.filter((c) => c.status !== 'pass').map((c) => c.id)).toEqual([]);
+  });
+  it('fails when a line does not add up', () => {
+    const f = withSale();
+    f.realisedSales![0].lines[0].taxEUR = 50;
+    const cs = runChecks(parseFinance(f));
+    expect(cs.find((c) => c.id === 'sale-s1-0')?.status).toBe('fail');
+    expect(cs.find((c) => c.id === 'sale-s1-tax')?.status).toBe('fail');
+  });
+});

@@ -64,6 +64,8 @@ export const cashLineSchema = z.looseObject({
   ratePct: num.optional(),
   src: str,
   note: str.optional(),
+  /** id of the realised sale whose proceeds this line holds (checked against the sale's net total) */
+  fromSale: str.optional(),
 });
 export type CashLine = z.infer<typeof cashLineSchema>;
 
@@ -91,6 +93,55 @@ const sleeve = z.looseObject({
   split: z.record(str, num).optional(),
   candidates: z.array(str).optional(),
 });
+
+/** Class split used to count a pension fund in the allocation (percentages; normalised in code). */
+const pensionSplit = z.looseObject({ equity: num, bonds: num, src: str, note: str.optional() });
+
+/** One fund line of a realised sale. Profit = net + earlier − paid (computed). */
+const saleLine = z.looseObject({
+  name: str,
+  since: str.optional(),
+  /** all cash put in, buy fees included */
+  paidEUR: num,
+  grossEUR: num,
+  taxEUR: num,
+  /** fee on the sale order */
+  feeEUR: num,
+  /** credited after tax and fee (statement) */
+  netEUR: num,
+  /** dividends and earlier partial sales, net */
+  earlierNetEUR: num,
+});
+
+export const realisedSaleSchema = z.looseObject({
+  id: str,
+  account: str,
+  label: str,
+  date: str,
+  creditedDate: str.optional(),
+  src: str,
+  note: str.optional(),
+  lines: z.array(saleLine).min(1),
+  /** totals as stated by the source; the lines must add up to them */
+  totals: z.looseObject({ paidEUR: num, grossEUR: num, taxEUR: num, netEUR: num, earlierNetEUR: num, profitEUR: num, feesAllOrdersEUR: num.optional() }),
+  notes: z.array(str).optional(),
+  /** the pre-sale estimates, for comparison */
+  beforeSale: z
+    .looseObject({
+      date: str,
+      valueEUR: num,
+      winnersGainEUR: num.optional(),
+      taxUpperBoundEUR: num.optional(),
+      /** rough yearly cost range (EUR) */
+      annualCostEUR: z.tuple([num, num]).optional(),
+      /** yearly cost as % of value from a better source (e.g. the KIDs); preferred when given */
+      costPct: num.optional(),
+      costPctSrc: str.optional(),
+      src: str,
+    })
+    .optional(),
+});
+export type RealisedSale = z.infer<typeof realisedSaleSchema>;
 
 const action = z.looseObject({
   id: str,
@@ -157,6 +208,8 @@ export const financeSchema = z.looseObject({
     sheetVsStatement: z.array(
       z.looseObject({ account: str, sheet: num, statement: num, diff: num, note: str.optional() }),
     ),
+    /** what the as-of date covers when accounts are at different dates */
+    asOfNote: str.optional(),
     positions: z.array(positionSchema),
     cash: z.array(cashLineSchema),
     expected: z.looseObject({
@@ -171,8 +224,9 @@ export const financeSchema = z.looseObject({
   }),
   fundsOverlapNotes: z.looseObject({
     vwce: z.looseObject({ usPct: num, itSectorPct: num, src: str }),
-    techApprox: z.looseObject({ valueEUR: num, pctOfLiquid: num, pctOfEquity: num, src: str }),
-    ingDedicatedTech: z.looseObject({ funds: z.array(str), valueEUR: num, src: str }),
+    /** tech share per ticker (%) beyond the core ETF, whose share is `vwce.itSectorPct`; single stocks count in full */
+    techApprox: z.looseObject({ techShareByTickerPct: z.record(str, num), src: str, note: str.optional() }),
+    ingDedicatedTech: z.looseObject({ funds: z.array(str), src: str }).optional(),
   }),
   home: z.looseObject({
     description: str,
@@ -228,16 +282,25 @@ export const financeSchema = z.looseObject({
     name: str,
     src: str,
     scopeOpenQuestion: str.optional(),
-    scopeDecision: z.looseObject({ text: str, date: str, src: str }).optional(),
+    scopeDecision: z.looseObject({ text: str, date: str, src: str, note: str.optional() }).optional(),
     cashBufferEUR: num,
+    /** equity.pct is nominal (equity takes what bonds and other leave); bonds.pct of investable wealth; other.pct is a cap */
     sleeves: z.looseObject({ equity: sleeve, bonds: sleeve, other: sleeve }),
+    /** how the rule is applied (buy-only orders etc.) */
+    rules: z.looseObject({ minOrderEUR: num, text: str, src: str }).optional(),
+    /** per pension account id: how its value splits into equity and bonds */
+    pensionLookThrough: z.record(str, pensionSplit).optional(),
+    /** sleeve ETFs not held yet: name, ISIN, TER */
+    instruments: z.record(str, z.looseObject({ name: str, isin: str.optional(), terPct: num.optional(), src: str, note: str.optional() })).optional(),
     googPolicy: z.looseObject({ decision: str, guardrails: str, guardrailsSrc: str }).optional(),
+    /** target − actual on investable wealth (other = room under the cap); reconciliation anchors */
     expectedGaps: z.looseObject({ equity: num, bonds: num, other: num, cash: num }),
   }),
   costs: z.looseObject({
     etfTerAnnualEUR: num,
-    ingFundsCostRangeEUR: z.tuple([num, num]),
-    ingFundsCostRangePct: z.tuple([num, num]),
+    /** managed funds' cost range; only while such funds are held */
+    ingFundsCostRangeEUR: z.tuple([num, num]).optional(),
+    ingFundsCostRangePct: z.tuple([num, num]).optional(),
     ingFundsCostSrc: str.optional(),
     ingServiceFeeAnnualEUR: num.optional(),
     etfEquivalentForIngEUR: num.optional(),
@@ -249,13 +312,18 @@ export const financeSchema = z.looseObject({
     unrealisedLosses: z.array(
       z.looseObject({ account: str, position: str, lossEUR: num, src: str }),
     ),
-    ingSwitch: z.looseObject({
-      winnersGainEUR: num,
-      maxTaxAt26EUR: num,
-      paybackYears: num.optional(),
-      note: str.optional(),
-      src: str,
-    }),
+    /** capital losses already realised (minusvalenze), usable against redditi diversi for 4 tax years */
+    realisedLosses: z.array(z.looseObject({ account: str, position: str, lossEUR: num, date: str, src: str, note: str.optional() })).optional(),
+    /** tax estimate for selling the managed funds; only while they are held */
+    ingSwitch: z
+      .looseObject({
+        winnersGainEUR: num,
+        maxTaxAt26EUR: num,
+        paybackYears: num.optional(),
+        note: str.optional(),
+        src: str,
+      })
+      .optional(),
     googBasisCheck: str.optional(),
     openItems: z.array(str),
   }),
@@ -338,6 +406,16 @@ export const financeSchema = z.looseObject({
       .optional(),
     rebalancing: str.optional(),
   }),
+  /** Positions sold in full: what went in, what came back, tax withheld. */
+  realisedSales: z.array(realisedSaleSchema).optional(),
+  /** Calendar-year returns (%) per ETF, after costs, for replaying past years. */
+  historicalReturns: z
+    .looseObject({
+      src: str,
+      note: str.optional(),
+      rows: z.array(z.looseObject({ ticker: str, name: str.optional(), method: str.optional(), returnsPct: z.record(str, num) })),
+    })
+    .optional(),
   sources: z.array(z.looseObject({ id: str, title: str, url: strN })),
   updateLog: z.array(z.looseObject({ date: str, text: str })).optional(),
   verifyAnchors: z
@@ -348,6 +426,10 @@ export const financeSchema = z.looseObject({
       classPct: z.record(str, num).optional(),
       singleStock: z.looseObject({ combinedEUR: num, shareOfLiquidPct: num }).optional(),
       rsu: z.looseObject({ events: num, firstUSD: num, laterUSD: num }).optional(),
+      /** investable wealth and the pension look-through */
+      wholeWealth: z.looseObject({ investable: num, pensionEquity: num, pensionBonds: num }).optional(),
+      /** default buy list (all cash above the buffer), per ticker */
+      investPlan: z.looseObject({ amountEUR: num, buys: z.record(str, num) }).optional(),
     })
     .optional(),
 });
