@@ -276,6 +276,7 @@ export function Portfolio() {
         toPct: d.costs.etfEquivalentForIngEUR != null ? (d.costs.etfEquivalentForIngEUR / L.ingValue) * 100 : 0.15,
         fromLabel: `${m.fundsAcctName} funds as-is`,
         toLabel: 'ETF equivalent',
+        toPhrase: 'the ETF equivalent',
       }
     : sold && sold.sale.beforeSale
       ? {
@@ -284,6 +285,7 @@ export function Portfolio() {
           toPct: planTerPct,
           fromLabel: 'Had the funds been kept',
           toLabel: "In the plan's ETFs",
+          toPhrase: "the plan's ETFs",
         }
       : null;
   const dragFromSrc = !m.liquid.fundsHeld && sold?.sale.beforeSale?.costPct != null ? sold.sale.beforeSale.costPctSrc ?? 'sourced' : 'estimate';
@@ -463,7 +465,7 @@ export function Portfolio() {
           >
             <EChart height={240} option={dragOption} ariaLabel={`Ten-year fee difference about ${eurCompact(drag10)}`} />
             <Assumptions>
-              {drag.fromLabel}: {pct(drag.fromPct, 2)} a year <Prov src={dragFromSrc} /> vs {drag.toLabel.toLowerCase()}: {pct(drag.toPct, 2)} <Prov src="computed" />.{' '}
+              {drag.fromLabel}: {pct(drag.fromPct, 2)} a year <Prov src={dragFromSrc} /> vs {drag.toPhrase}: {pct(drag.toPct, 2)} <Prov src="computed" />.{' '}
               {m.liquid.fundsHeld ? `${d.costs.etfEquivalentNote ?? ''} Ignores the one-off switch tax (see Tax).` : 'The tax paid on the sale is on the Tax page.'}
             </Assumptions>
           </Card>
