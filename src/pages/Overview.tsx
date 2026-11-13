@@ -229,7 +229,13 @@ export function Overview() {
           {nextMs ? (
             <>
               <div className="kpi-value">
-                {daysBetween(today, parseISODate(nextMs.date))} <span style={{ fontSize: 15, fontWeight: 500 }}>days</span>
+                {daysBetween(today, parseISODate(nextMs.date)) === 0 ? (
+                  'Today'
+                ) : (
+                  <>
+                    {daysBetween(today, parseISODate(nextMs.date))} <span style={{ fontSize: 15, fontWeight: 500 }}>days</span>
+                  </>
+                )}
               </div>
               <div className="kpi-delta muted">
                 {nextMs.label} · {fmtDate(nextMs.date)}

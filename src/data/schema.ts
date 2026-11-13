@@ -309,9 +309,8 @@ export const financeSchema = z.looseObject({
   }),
   tax: z.looseObject({
     rules: z.array(z.looseObject({ id: str, text: str, src: str })),
-    unrealisedLosses: z.array(
-      z.looseObject({ account: str, position: str, lossEUR: num, src: str }),
-    ),
+    /** deprecated: unrealised losses are read from the positions */
+    unrealisedLosses: z.array(z.looseObject({ account: str, position: str, lossEUR: num, src: str })).optional(),
     /** capital losses already realised (minusvalenze), usable against redditi diversi for 4 tax years */
     realisedLosses: z.array(z.looseObject({ account: str, position: str, lossEUR: num, date: str, src: str, note: str.optional() })).optional(),
     /** tax estimate for selling the managed funds; only while they are held */

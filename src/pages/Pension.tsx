@@ -42,7 +42,7 @@ export function Pension() {
     <>
       <PageTitle sub={funds.map((f) => f.name).join(' + ')}>Pension · {eurCompact(total)}</PageTitle>
       <div className="grid">
-        <Card className="span-8" title={`Pension funds total ${eurCompact(total)}`} sub="Stacked over line-item snapshots (sheet)">
+        <Card className="span-8" title={`Pension funds total ${eurCompact(total)}`} sub="Stacked over the net-worth snapshots">
           <EChart height={280} option={option} ariaLabel={`Pension funds over time, now ${eur(total)}`} />
         </Card>
         <Card className="span-4" title="Contributions" soft>
@@ -73,8 +73,8 @@ export function Pension() {
           const st = [...(d.accountStatements ?? [])].filter((x) => x.account === f.id).sort((a, b) => a.date.localeCompare(b.date)).pop();
           return (
             <Card key={f.id} className="span-6" title={f.name} sub={f.institution}>
-              <div className="big">{sheetVal != null ? <Money v={sheetVal} src="sheet" /> : '—'}</div>
-              <div className="muted small">Sheet value, {fmtDate(m.latest.date)}</div>
+              <div className="big">{sheetVal != null ? <Money v={sheetVal} src={m.latest.src} /> : '—'}</div>
+              <div className="muted small">Net-worth snapshot, {fmtDate(m.latest.date)}</div>
               {st && (
                 <>
                   <div className="stat" style={{ marginTop: 8 }}>
@@ -91,7 +91,7 @@ export function Pension() {
                   )}
                   {sheetVal != null && (
                     <div className="stat small">
-                      <span>Statement − sheet</span>
+                      <span>Statement − snapshot</span>
                       <span className={`num ${st.valueEUR - sheetVal < 0 ? 'down' : 'up'}`}>{eur(st.valueEUR - sheetVal, 2)} <Prov src="computed" /></span>
                     </div>
                   )}

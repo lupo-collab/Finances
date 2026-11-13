@@ -5,6 +5,7 @@ import { usePalette } from '../theme';
 import { eur, eurCompact, pct, fmtDate } from '../lib/format';
 import { unrealisedByPosition, paybackYears } from '../lib/calc/tax';
 import { carryUntilYear, lossTaxValue } from '../lib/calc/realised';
+import { unrealised } from '../lib/calc/liquid';
 
 export function Tax() {
   const { d, m } = useApp();
@@ -24,6 +25,11 @@ export function Tax() {
   const payback = paybackYears(m.ingSwitch.tax, saving);
   const regimeAccounts = d.accounts.filter((a) => a.regime !== '-' && a.regime !== 'real estate');
   const realisedLosses = T.realisedLosses ?? [];
+  // unrealised losses straight from the positions (statement P&L or value − cost basis)
+  const unrealisedLosses = d.liquidPortfolio.positions
+    .map((p) => ({ p, loss: unrealised(p).eur }))
+    .filter((x): x is { p: (typeof x)['p']; loss: number } => x.loss != null && x.loss < 0)
+    .sort((a, b) => a.loss - b.loss);
 
   return (
     <>
@@ -132,12 +138,13 @@ export function Tax() {
             </>
           )}
           <ul className="list">
-            {T.unrealisedLosses.map((l) => (
-              <li key={l.position + l.account}>
-                <span style={{ flex: 1 }}>{l.position} · {acctName(l.account)}</span>
-                <span className="down num">{eur(l.lossEUR, 2)}</span> <Prov src={l.src} />
+            {unrealisedLosses.map(({ p, loss }) => (
+              <li key={`${p.account}-${p.isin ?? p.name}`}>
+                <span style={{ flex: 1 }}>{p.ticker ?? p.name} · {acctName(p.account)}</span>
+                <span className="down num">{eur(loss, 2)}</span> <Prov src={p.src} />
               </li>
             ))}
+            {!unrealisedLosses.length && <li className="muted">None among positions with a known cost.</li>}
           </ul>
           <Assumptions>
             Fund/ETF losses are redditi diversi: they can offset gains on single stocks, bonds, ETC/ETN and derivatives in the same tax year and the next four, but not fund/ETF gains (redditi di capitale).
